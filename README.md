@@ -130,6 +130,42 @@ Copia `skills/primary-source-search/SKILL.md` a `~/.codex/skills/primary-source-
 
 ---
 
+## Uso remoto (Claude.ai, App web de Gemini o Cloud Run)
+
+El servidor incluye un modo **Streamable HTTP** (`--http`, endpoint `/mcp` y `/healthz`) que **desactiva automáticamente la lectura de archivos locales y bloquea IPs privadas/internas (protección anti-SSRF)**.
+
+### 1. Arrancar en modo HTTP remoto
+```bash
+# Recomendado: define un Bearer token si lo vas a exponer públicamente
+export MCP_AUTH_TOKEN="tu-token-secreto"
+primary-source-tracer-mcp --http --host 127.0.0.1 --port 8000
+```
+
+O en Docker / Google Cloud Run (usa el `Dockerfile` incluido):
+```bash
+gcloud run deploy primary-source-tracer \
+  --source . \
+  --allow-unauthenticated \
+  --set-env-vars MCP_AUTH_TOKEN="tu-token-secreto"
+```
+
+### 2. Pruebas rápidas desde tu PC con túnel HTTPS
+Si quieres probar desde la nube sin desplegar todavía, levanta el servidor en `127.0.0.1:8000` y expón un túnel HTTPS en puerto 443 (por ejemplo con Cloudflare Tunnel o `ngrok`):
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+Usa la URL resultante terminada en `/mcp` (ej. `https://tu-subdominio.trycloudflare.com/mcp`).
+
+### 3. Conectar en interfaces web
+- **Claude.ai / Claude Desktop**: *Settings → Connectors → Add custom connector* → pega `https://<tu-dominio>/mcp`.
+- **Gemini (`gemini.google.com`)**: *Settings → Connected Apps → Custom App / MCP Server* → pega `https://<tu-dominio>/mcp` (disponibilidad según cuenta/Workspace).
+- **Claude Code (remoto)**:
+  ```bash
+  claude mcp add --transport http primary-source-tracer https://<tu-dominio>/mcp --header "Authorization: Bearer tu-token-secreto"
+  ```
+
+---
+
 ## Herramientas MCP incluidas
 
 1. `search_web_candidates(queries, max_results_per_query)` — Ejecuta consultas dinámicas definidas por el agente (100 % agnóstico al tema).

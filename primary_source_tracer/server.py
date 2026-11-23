@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import hashlib
 import http.cookiejar
 import io
+import ipaddress
 import json
 import logging
+import os
 import re
+import socket
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -41,7 +46,72 @@ BROWSER_HEADERS = {
 MAX_PAYLOAD_BYTES = 11500
 
 
-def _render_scanned_pdf_pages(raw_bytes: bytes, max_pages: int = 3) -> tuple[str, int, list[str]]:
+def _is_blocked_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+        if _is_blocked_ip(ip_obj.ipv4_mapped):
+            return True
+    return (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_multicast
+        or ip_obj.is_reserved
+        or ip_obj.is_unspecified
+    )
+
+
+def validate_public_http_url(url: str) -> str | None:
+    """Return an error reason if *url* is not a safe public http(s) target, else None."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https"):
+        return "Solo se permiten URLs http:// o https:// en modo remoto."
+    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not hostname:
+        return "URL inválida: falta el nombre de host."
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        return f"Host local o interno bloqueado en modo remoto: {hostname}"
+
+    try:
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal_ip = None
+
+    if literal_ip is not None:
+        if _is_blocked_ip(literal_ip):
+            return f"Dirección IP privada/reservada bloqueada en modo remoto: {hostname}"
+        return None
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        addr_info = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return None
+
+    for _, _, _, _, sockaddr in addr_info:
+        raw_ip = sockaddr[0].split("%")[0]
+        try:
+            resolved_ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+        if _is_blocked_ip(resolved_ip):
+            return f"El host '{hostname}' resuelve a una IP privada/reservada bloqueada ({raw_ip})."
+    return None
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        absolute_new = urllib.parse.urljoin(req.full_url, newurl)
+        blocked_reason = validate_public_http_url(absolute_new)
+        if blocked_reason:
+            raise urllib.error.URLError(blocked_reason)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _render_scanned_pdf_pages(
+    raw_bytes: bytes,
+    max_pages: int = 3,
+    render_images: bool = True,
+) -> tuple[str, int, list[str]]:
     rendered_paths: list[str] = []
     try:
         try:
@@ -62,26 +132,32 @@ def _render_scanned_pdf_pages(raw_bytes: bytes, max_pages: int = 3) -> tuple[str
         if len(joined) < 20 and count > 0:
             img_count = sum(len(doc[i].get_images()) for i in range(min(count, 10)))
             if img_count > 0:
-                out_dir = Path(tempfile.gettempdir()) / "primary_source_tracer_pages"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                digest = hashlib.sha1(raw_bytes[:65536]).hexdigest()[:10]
-                for i in range(min(count, max_pages)):
-                    png_path = out_dir / f"scan_{digest}_p{i + 1}.png"
-                    if not png_path.exists():
-                        pix = doc[i].get_pixmap(dpi=150)
-                        pix.save(str(png_path))
-                    rendered_paths.append(str(png_path))
-                joined = (
-                    f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
-                    f"sin capa OCR; {len(rendered_paths)} página(s) renderizadas a PNG en rendered_page_images]"
-                )
+                if render_images:
+                    out_dir = Path(tempfile.gettempdir()) / "primary_source_tracer_pages"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    digest = hashlib.sha1(raw_bytes[:65536]).hexdigest()[:10]
+                    for i in range(min(count, max_pages)):
+                        png_path = out_dir / f"scan_{digest}_p{i + 1}.png"
+                        if not png_path.exists():
+                            pix = doc[i].get_pixmap(dpi=150)
+                            pix.save(str(png_path))
+                        rendered_paths.append(str(png_path))
+                    joined = (
+                        f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
+                        f"sin capa OCR; {len(rendered_paths)} página(s) renderizadas a PNG en rendered_page_images]"
+                    )
+                else:
+                    joined = (
+                        f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
+                        "sin capa OCR; renderizado PNG local omitido en modo remoto]"
+                    )
         doc.close()
         return joined, count, rendered_paths
     except Exception:
         return "", 1, []
 
 
-def _extract_pdf_bytes(raw_bytes: bytes) -> tuple[str, int, list[str]]:
+def _extract_pdf_bytes(raw_bytes: bytes, render_images: bool = True) -> tuple[str, int, list[str]]:
     pypdf_text = ""
     pypdf_count = 0
     try:
@@ -97,7 +173,7 @@ def _extract_pdf_bytes(raw_bytes: bytes) -> tuple[str, int, list[str]]:
     except Exception:
         pass
 
-    fitz_text, fitz_count, rendered_paths = _render_scanned_pdf_pages(raw_bytes)
+    fitz_text, fitz_count, rendered_paths = _render_scanned_pdf_pages(raw_bytes, render_images=render_images)
     if len(fitz_text) >= 20 or rendered_paths:
         return fitz_text, max(fitz_count, pypdf_count, 1), rendered_paths
 
@@ -176,24 +252,40 @@ def _infer_resource_type(url_or_path: str, content_type: str = "") -> str:
     return "html"
 
 
-def fetch_document(url_or_path: str, timeout: int = 8) -> dict:
+def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False) -> dict:
     target = (url_or_path or "").strip()
+    if remote_safe:
+        blocked_reason = validate_public_http_url(target)
+        if blocked_reason:
+            return {
+                "title": "",
+                "text": "",
+                "resource_type": _infer_resource_type(target),
+                "outbound_links": [],
+                "stock_images": [],
+                "has_table": False,
+                "page_count": 1,
+                "rendered_page_images": [],
+                "error": blocked_reason,
+            }
+
     local_candidate: Path | None = None
-    if target.startswith("file:///"):
-        parsed_path = urllib.parse.unquote(urllib.parse.urlparse(target).path)
-        if re.match(r"^/[A-Za-z]:/", parsed_path):
-            parsed_path = parsed_path[1:]
-        local_candidate = Path(parsed_path)
-    elif not target.startswith(("http://", "https://")):
-        p = Path(target)
-        if p.exists():
-            local_candidate = p
+    if not remote_safe:
+        if target.startswith("file:///"):
+            parsed_path = urllib.parse.unquote(urllib.parse.urlparse(target).path)
+            if re.match(r"^/[A-Za-z]:/", parsed_path):
+                parsed_path = parsed_path[1:]
+            local_candidate = Path(parsed_path)
+        elif not target.startswith(("http://", "https://")):
+            p = Path(target)
+            if p.exists():
+                local_candidate = p
 
     if local_candidate is not None and local_candidate.exists():
         raw_bytes = local_candidate.read_bytes()
         res_type = _infer_resource_type(str(local_candidate))
         if res_type == "pdf" or raw_bytes.lstrip()[:4] == b"%PDF":
-            text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes)
+            text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes, render_images=not remote_safe)
             return {
                 "title": local_candidate.name,
                 "text": text,
@@ -233,7 +325,10 @@ def fetch_document(url_or_path: str, timeout: int = 8) -> dict:
         }
 
     cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    handlers: list[urllib.request.BaseHandler] = [urllib.request.HTTPCookieProcessor(cj)]
+    if remote_safe:
+        handlers.append(_SafeRedirectHandler())
+    opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(target, headers=BROWSER_HEADERS)
     try:
         with opener.open(req, timeout=timeout) as resp:
@@ -241,7 +336,7 @@ def fetch_document(url_or_path: str, timeout: int = 8) -> dict:
             raw_bytes = resp.read(2_500_000)
             is_pdf_bytes = raw_bytes.lstrip()[:4] == b"%PDF" or "application/pdf" in content_type.lower()
             if is_pdf_bytes:
-                text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes)
+                text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes, render_images=not remote_safe)
                 return {
                     "title": Path(urllib.parse.urlparse(target).path).name or target,
                     "text": text,
@@ -422,8 +517,9 @@ def tool_inspect_and_classify_source(
     url_or_path: str,
     agent_evidence_markers: list[str] | None = None,
     max_excerpts: int = 5,
+    remote_safe: bool = False,
 ) -> dict:
-    fetched = fetch_document(url_or_path)
+    fetched = fetch_document(url_or_path, remote_safe=remote_safe)
     analysis = analyze_document_text(
         text=fetched["text"],
         url_or_path=url_or_path,
@@ -444,6 +540,7 @@ def tool_compare_echo_and_trace(
     agent_evidence_markers: list[str] | None = None,
     follow_bridge_links: bool = True,
     max_bridge_hops: int = 4,
+    remote_safe: bool = False,
 ) -> dict:
     markers = agent_evidence_markers or []
     evaluated: list[dict] = []
@@ -452,14 +549,15 @@ def tool_compare_echo_and_trace(
     bridge_paths: list[dict] = []
 
     def _norm_key(u: str) -> str:
-        if u.startswith("file:///"):
-            parsed_path = urllib.parse.unquote(urllib.parse.urlparse(u).path)
-            if re.match(r"^/[A-Za-z]:/", parsed_path):
-                parsed_path = parsed_path[1:]
-            return str(Path(parsed_path).resolve()).lower()
-        p = Path(u)
-        if not u.startswith(("http://", "https://")) and p.exists():
-            return str(p.resolve()).lower()
+        if not remote_safe:
+            if u.startswith("file:///"):
+                parsed_path = urllib.parse.unquote(urllib.parse.urlparse(u).path)
+                if re.match(r"^/[A-Za-z]:/", parsed_path):
+                    parsed_path = parsed_path[1:]
+                return str(Path(parsed_path).resolve()).lower()
+            p = Path(u)
+            if not u.startswith(("http://", "https://")) and p.exists():
+                return str(p.resolve()).lower()
         return u.strip()
 
     for u in (urls or [])[:10]:
@@ -467,7 +565,7 @@ def tool_compare_echo_and_trace(
         if not key or key in visited_keys:
             continue
         visited_keys.add(key)
-        fetched = fetch_document(u)
+        fetched = fetch_document(u, remote_safe=remote_safe)
         raw_texts_for_echo.append({"url": u, "text": fetched["text"]})
         analysis = analyze_document_text(
             text=fetched["text"],
@@ -502,7 +600,7 @@ def tool_compare_echo_and_trace(
                     continue
                 visited_keys.add(key)
                 hops_done += 1
-                fetched = fetch_document(target_url)
+                fetched = fetch_document(target_url, remote_safe=remote_safe)
                 raw_texts_for_echo.append({"url": target_url, "text": fetched["text"]})
                 hop_analysis = analyze_document_text(
                     text=fetched["text"],
@@ -649,7 +747,7 @@ MCP_TOOLS = [
 ]
 
 
-def handle_jsonrpc_request(request: dict) -> dict | None:
+def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | None:
     method = request.get("method", "")
     req_id = request.get("id")
     params = request.get("params") or {}
@@ -687,6 +785,7 @@ def handle_jsonrpc_request(request: dict) -> dict | None:
                         url_or_path=args.get("url_or_path", ""),
                         agent_evidence_markers=args.get("agent_evidence_markers") or [],
                         max_excerpts=args.get("max_excerpts", 5),
+                        remote_safe=remote_safe,
                     )
                 elif name == "compare_echo_and_trace":
                     data = tool_compare_echo_and_trace(
@@ -694,6 +793,7 @@ def handle_jsonrpc_request(request: dict) -> dict | None:
                         agent_evidence_markers=args.get("agent_evidence_markers") or [],
                         follow_bridge_links=args.get("follow_bridge_links", True),
                         max_bridge_hops=args.get("max_bridge_hops", 4),
+                        remote_safe=remote_safe,
                     )
                 else:
                     return {
@@ -727,7 +827,7 @@ def handle_jsonrpc_request(request: dict) -> dict | None:
     return None
 
 
-def main() -> None:
+def run_stdio_server() -> None:
     try:
         sys.stdin.reconfigure(encoding="utf-8", errors="replace")
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -741,10 +841,58 @@ def main() -> None:
             req = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        resp = handle_jsonrpc_request(req)
+        resp = handle_jsonrpc_request(req, remote_safe=False)
         if resp is not None:
             sys.stdout.write(json.dumps(resp, ensure_ascii=True) + "\n")
             sys.stdout.flush()
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="primary-source-tracer-mcp",
+        description="Primary Source Tracer MCP server (stdio by default, or Streamable HTTP with --http).",
+    )
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run as a stateless Streamable HTTP MCP server (/mcp and /healthz) instead of stdio.",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MCP_HOST", "127.0.0.1"),
+        help="Host interface to bind in --http mode (default: 127.0.0.1 or $MCP_HOST).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("PORT", "8000")),
+        help="Port to bind in --http mode (default: $PORT or 8000).",
+    )
+    parser.add_argument(
+        "--auth-token",
+        default=os.environ.get("MCP_AUTH_TOKEN", ""),
+        help="Optional Bearer token required for /mcp in --http mode (default: $MCP_AUTH_TOKEN).",
+    )
+    parser.add_argument(
+        "--allow-local-files",
+        action="store_true",
+        help="Allow reading local files and private network targets in --http mode (not recommended).",
+    )
+    args = parser.parse_args(argv)
+
+    if args.http:
+        from primary_source_tracer.http_server import run_http_server
+
+        run_http_server(
+            host=args.host,
+            port=args.port,
+            request_handler=lambda req, safe: handle_jsonrpc_request(req, remote_safe=safe),
+            auth_token=args.auth_token,
+            remote_safe=not args.allow_local_files,
+        )
+        return
+
+    run_stdio_server()
 
 
 if __name__ == "__main__":
