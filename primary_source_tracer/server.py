@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import http.cookiejar
@@ -111,8 +112,10 @@ def _render_scanned_pdf_pages(
     raw_bytes: bytes,
     max_pages: int = 3,
     render_images: bool = True,
-) -> tuple[str, int, list[str]]:
+    render_base64: bool = False,
+) -> tuple[str, int, list[str], list[dict]]:
     rendered_paths: list[str] = []
+    inline_images: list[dict] = []
     try:
         try:
             import pymupdf as fitz  # type: ignore
@@ -146,18 +149,35 @@ def _render_scanned_pdf_pages(
                         f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
                         f"sin capa OCR; {len(rendered_paths)} página(s) renderizadas a PNG en rendered_page_images]"
                     )
+                elif render_base64:
+                    for i in range(min(count, 2)):
+                        pix = doc[i].get_pixmap(dpi=125)
+                        img_bytes = pix.tobytes("jpeg", jpg_quality=80)
+                        if len(img_bytes) <= 450_000:
+                            inline_images.append({
+                                "data": base64.b64encode(img_bytes).decode("ascii"),
+                                "mimeType": "image/jpeg",
+                            })
+                    joined = (
+                        f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
+                        f"sin capa OCR; {len(inline_images)} imagen(es) adjuntas en la respuesta MCP para lectura visual]"
+                    )
                 else:
                     joined = (
                         f"[SCANNED_FACSIMILE_PDF: {count} página(s) con {img_count} imagen(es) escaneada(s) "
                         "sin capa OCR; renderizado PNG local omitido en modo remoto]"
                     )
         doc.close()
-        return joined, count, rendered_paths
+        return joined, count, rendered_paths, inline_images
     except Exception:
-        return "", 1, []
+        return "", 1, [], []
 
 
-def _extract_pdf_bytes(raw_bytes: bytes, render_images: bool = True) -> tuple[str, int, list[str]]:
+def _extract_pdf_bytes(
+    raw_bytes: bytes,
+    render_images: bool = True,
+    render_base64: bool = False,
+) -> tuple[str, int, list[str], list[dict]]:
     pypdf_text = ""
     pypdf_count = 0
     try:
@@ -169,19 +189,23 @@ def _extract_pdf_bytes(raw_bytes: bytes, render_images: bool = True) -> tuple[st
         pypdf_text = "\n".join(pages).strip()
         pypdf_count = len(reader.pages)
         if len(pypdf_text) >= 20:
-            return pypdf_text, pypdf_count, []
+            return pypdf_text, pypdf_count, [], []
     except Exception:
         pass
 
-    fitz_text, fitz_count, rendered_paths = _render_scanned_pdf_pages(raw_bytes, render_images=render_images)
-    if len(fitz_text) >= 20 or rendered_paths:
-        return fitz_text, max(fitz_count, pypdf_count, 1), rendered_paths
+    fitz_text, fitz_count, rendered_paths, inline_images = _render_scanned_pdf_pages(
+        raw_bytes,
+        render_images=render_images,
+        render_base64=render_base64,
+    )
+    if len(fitz_text) >= 20 or rendered_paths or inline_images:
+        return fitz_text, max(fitz_count, pypdf_count, 1), rendered_paths, inline_images
 
     decoded = raw_bytes.decode("latin-1", errors="ignore")
     chunks = re.findall(r"\(([^\(\)\\]{4,200})\)", decoded)
     text = " ".join(c for c in chunks if re.search(r"[A-Za-zÁÉÍÓÚáéíóúñÑ0-9]{3,}", c))
     page_matches = re.findall(r"/Type\s*/Page\b", decoded)
-    return text or pypdf_text, max(len(page_matches), pypdf_count, fitz_count, 1), []
+    return text or pypdf_text, max(len(page_matches), pypdf_count, fitz_count, 1), [], []
 
 
 def parse_openalex_work(payload: dict) -> dict:
@@ -252,7 +276,12 @@ def _infer_resource_type(url_or_path: str, content_type: str = "") -> str:
     return "html"
 
 
-def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False) -> dict:
+def fetch_document(
+    url_or_path: str,
+    timeout: int = 8,
+    remote_safe: bool = False,
+    inline_scanned_images: bool = False,
+) -> dict:
     target = (url_or_path or "").strip()
     if remote_safe:
         blocked_reason = validate_public_http_url(target)
@@ -266,6 +295,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
                 "has_table": False,
                 "page_count": 1,
                 "rendered_page_images": [],
+                "inline_images": [],
                 "error": blocked_reason,
             }
 
@@ -285,7 +315,11 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
         raw_bytes = local_candidate.read_bytes()
         res_type = _infer_resource_type(str(local_candidate))
         if res_type == "pdf" or raw_bytes.lstrip()[:4] == b"%PDF":
-            text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes, render_images=not remote_safe)
+            text, page_count, rendered_images, inline_images = _extract_pdf_bytes(
+                raw_bytes,
+                render_images=not remote_safe,
+                render_base64=inline_scanned_images,
+            )
             return {
                 "title": local_candidate.name,
                 "text": text,
@@ -295,6 +329,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
                 "has_table": "|" in text or "\t" in text,
                 "page_count": page_count,
                 "rendered_page_images": rendered_images,
+                "inline_images": inline_images,
                 "error": None,
             }
         html_str = raw_bytes.decode("utf-8", errors="ignore")
@@ -308,6 +343,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
             "has_table": parsed["has_table"],
             "page_count": 1,
             "rendered_page_images": [],
+            "inline_images": [],
             "error": None,
         }
 
@@ -321,6 +357,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
             "has_table": False,
             "page_count": 1,
             "rendered_page_images": [],
+            "inline_images": [],
             "error": "Archivo o URL no encontrado.",
         }
 
@@ -336,7 +373,11 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
             raw_bytes = resp.read(2_500_000)
             is_pdf_bytes = raw_bytes.lstrip()[:4] == b"%PDF" or "application/pdf" in content_type.lower()
             if is_pdf_bytes:
-                text, page_count, rendered_images = _extract_pdf_bytes(raw_bytes, render_images=not remote_safe)
+                text, page_count, rendered_images, inline_images = _extract_pdf_bytes(
+                    raw_bytes,
+                    render_images=not remote_safe,
+                    render_base64=inline_scanned_images,
+                )
                 return {
                     "title": Path(urllib.parse.urlparse(target).path).name or target,
                     "text": text,
@@ -346,6 +387,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
                     "has_table": "|" in text or "\t" in text,
                     "page_count": page_count,
                     "rendered_page_images": rendered_images,
+                    "inline_images": inline_images,
                     "error": None,
                 }
             res_type = "html" if "text/html" in content_type.lower() else _infer_resource_type(target, content_type)
@@ -360,6 +402,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
                 "has_table": parsed["has_table"],
                 "page_count": 1,
                 "rendered_page_images": [],
+                "inline_images": [],
                 "error": None,
             }
     except Exception as exc:
@@ -372,6 +415,7 @@ def fetch_document(url_or_path: str, timeout: int = 8, remote_safe: bool = False
             "has_table": False,
             "page_count": 1,
             "rendered_page_images": [],
+            "inline_images": [],
             "error": f"Error al descargar fuente: {type(exc).__name__}: {exc}",
         }
 
@@ -417,6 +461,8 @@ def _enforce_budget(payload: dict) -> dict:
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     if len(raw) <= MAX_PAYLOAD_BYTES:
         return payload
+    if "candidates" in payload:
+        payload["candidates"] = payload["candidates"][:10]
     if "matched_excerpts" in payload:
         payload["matched_excerpts"] = payload["matched_excerpts"][:2]
     if "outbound_links" in payload:
@@ -428,57 +474,160 @@ def _enforce_budget(payload: dict) -> dict:
     return payload
 
 
+def _search_duckduckgo(query_str: str, cap: int) -> tuple[list[dict], str | None]:
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query_str})
+    req = urllib.request.Request(url, headers=BROWSER_HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            status = getattr(resp, "status", 200)
+            html_str = resp.read(500_000).decode("utf-8", errors="ignore")
+        if status == 202 or "anomaly-modal" in html_str:
+            return [], (
+                f"DuckDuckGo devolvió desafío anti-bot HTTP {status} para '{query_str}'; "
+                "se activó respaldo en APIs abiertas (OpenAlex/Wikipedia)."
+            )
+        parser = _DDGResultParser()
+        parser.feed(html_str)
+        items: list[dict] = []
+        for item in parser.results[:cap]:
+            u = item["url"].strip()
+            if not u.startswith(("http://", "https://")):
+                continue
+            items.append({
+                "query_used": query_str,
+                "title": " ".join(item["title"].split())[:160],
+                "url": u,
+                "snippet": " ".join(item["snippet"].split())[:240],
+                "search_engine": "duckduckgo",
+            })
+        if not items:
+            return [], f"DuckDuckGo devolvió 0 resultados HTML para '{query_str}'; se activó respaldo en APIs abiertas."
+        return items, None
+    except Exception as exc:
+        return [], f"Error en DuckDuckGo para '{query_str}' ({type(exc).__name__}); se activó respaldo en APIs abiertas."
+
+
+def _search_openalex_candidates(query_str: str, cap: int) -> list[dict]:
+    per_page = max(1, min(cap, 6))
+    api_url = (
+        "https://api.openalex.org/works?"
+        + urllib.parse.urlencode({"search": query_str, "per-page": str(per_page)})
+    )
+    req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            payload = json.loads(resp.read(400_000).decode("utf-8", errors="ignore"))
+        items: list[dict] = []
+        for work in payload.get("results") or []:
+            parsed = parse_openalex_work(work)
+            target_url = parsed.get("oa_pdf_url") or work.get("doi") or work.get("id") or ""
+            if not target_url.startswith(("http://", "https://")):
+                continue
+            year = parsed.get("publication_year") or ""
+            cited = parsed.get("cited_by_count", 0)
+            oa_tag = "Open Access PDF" if parsed.get("oa_pdf_url") else "DOI/Registro OpenAlex"
+            snippet = f"{oa_tag} ({year}, {cited} citas). {parsed.get('abstract_text', '')}".strip()
+            items.append({
+                "query_used": query_str,
+                "title": (parsed.get("canonical_title") or "")[:160],
+                "url": target_url,
+                "snippet": snippet[:240],
+                "search_engine": "openalex",
+            })
+        return items[:per_page]
+    except Exception:
+        return []
+
+
+def _search_wikipedia_candidates(query_str: str, cap: int) -> list[dict]:
+    has_spanish = bool(re.search(r"[áéíóúñü¿¡]|\b(el|la|los|las|sobre|efecto|estudio|ley)\b", query_str, re.I))
+    lang = "es" if has_spanish else "en"
+    limit = max(1, min(cap, 3))
+    api_url = (
+        f"https://{lang}.wikipedia.org/w/api.php?"
+        + urllib.parse.urlencode({
+            "action": "query",
+            "list": "search",
+            "srsearch": query_str,
+            "srlimit": str(limit),
+            "format": "json",
+        })
+    )
+    req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            payload = json.loads(resp.read(200_000).decode("utf-8", errors="ignore"))
+        items: list[dict] = []
+        for hit in (payload.get("query") or {}).get("search") or []:
+            title = (hit.get("title") or "").strip()
+            if not title:
+                continue
+            wiki_url = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+            raw_snip = re.sub(r"<[^>]+>", " ", hit.get("snippet") or "")
+            items.append({
+                "query_used": query_str,
+                "title": f"[Wikipedia {lang.upper()}] {title}"[:160],
+                "url": wiki_url,
+                "snippet": " ".join(raw_snip.split())[:240],
+                "search_engine": f"wikipedia_{lang}",
+            })
+        return items[:limit]
+    except Exception:
+        return []
+
+
 def tool_search_web_candidates(queries: list[str], max_results_per_query: int = 8) -> dict:
     candidates: list[dict] = []
     seen_urls: set[str] = set()
+    search_friction: list[str] = []
     cap = max(1, min(int(max_results_per_query or 8), 12))
+
+    def _append_candidate(item: dict) -> bool:
+        u = (item.get("url") or "").strip()
+        if not u or u in seen_urls or not u.startswith(("http://", "https://")):
+            return False
+        seen_urls.add(u)
+        parsed = urllib.parse.urlparse(u)
+        candidates.append({
+            "query_used": item["query_used"],
+            "title": item["title"],
+            "url": u,
+            "domain": (parsed.netloc or "").lower(),
+            "resource_type": _infer_resource_type(u),
+            "domain_category": categorize_domain(u),
+            "snippet": item["snippet"],
+            "search_engine": item.get("search_engine", "web"),
+        })
+        return True
 
     for q in (queries or [])[:6]:
         query_str = (q or "").strip()
         if not query_str:
             continue
-        url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query_str})
-        req = urllib.request.Request(url, headers=BROWSER_HEADERS)
-        try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                html_str = resp.read(500_000).decode("utf-8", errors="ignore")
-            parser = _DDGResultParser()
-            parser.feed(html_str)
-            count = 0
-            for item in parser.results:
-                u = item["url"].strip()
-                if not u or u in seen_urls or not u.startswith(("http://", "https://")):
-                    continue
-                seen_urls.add(u)
-                parsed = urllib.parse.urlparse(u)
-                candidates.append({
-                    "query_used": query_str,
-                    "title": " ".join(item["title"].split())[:160],
-                    "url": u,
-                    "domain": (parsed.netloc or "").lower(),
-                    "resource_type": _infer_resource_type(u),
-                    "domain_category": categorize_domain(u),
-                    "snippet": " ".join(item["snippet"].split())[:240],
-                })
-                count += 1
-                if count >= cap:
-                    break
-        except Exception as exc:
-            candidates.append({
-                "query_used": query_str,
-                "title": "[Error en consulta de búsqueda]",
-                "url": "",
-                "domain": "",
-                "resource_type": "html",
-                "domain_category": "other",
-                "snippet": f"{type(exc).__name__}: {exc}",
-            })
+        ddg_items, friction_msg = _search_duckduckgo(query_str, cap)
+        if friction_msg:
+            search_friction.append(friction_msg)
+        added_for_query = 0
+        for item in ddg_items:
+            if _append_candidate(item):
+                added_for_query += 1
 
-    return _enforce_budget({
+        if added_for_query == 0:
+            for item in _search_openalex_candidates(query_str, min(cap, 5)):
+                if _append_candidate(item):
+                    added_for_query += 1
+            for item in _search_wikipedia_candidates(query_str, min(cap, 2)):
+                if _append_candidate(item):
+                    added_for_query += 1
+
+    payload = {
         "note": "domain_category y resource_type son descriptivos; NO implican que una fuente sea primaria. Inspeccione cada candidato con inspect_and_classify_source.",
         "total_candidates": len(candidates),
         "candidates": candidates,
-    })
+    }
+    if search_friction:
+        payload["search_friction"] = search_friction[:6]
+    return _enforce_budget(payload)
 
 
 def _attach_browserless_enhancements(analysis: dict, fetched: dict) -> dict:
@@ -519,7 +668,11 @@ def tool_inspect_and_classify_source(
     max_excerpts: int = 5,
     remote_safe: bool = False,
 ) -> dict:
-    fetched = fetch_document(url_or_path, remote_safe=remote_safe)
+    fetched = fetch_document(
+        url_or_path,
+        remote_safe=remote_safe,
+        inline_scanned_images=remote_safe,
+    )
     analysis = analyze_document_text(
         text=fetched["text"],
         url_or_path=url_or_path,
@@ -532,7 +685,13 @@ def tool_inspect_and_classify_source(
         max_excerpts=max(1, min(int(max_excerpts or 5), 6)),
     )
     analysis = _attach_browserless_enhancements(analysis, fetched)
-    return _enforce_budget(analysis)
+    inline_images = fetched.get("inline_images") or []
+    if inline_images:
+        analysis["inline_images_attached"] = len(inline_images)
+    budgeted = _enforce_budget(analysis)
+    if inline_images:
+        budgeted["_inline_images"] = inline_images
+    return budgeted
 
 
 def tool_compare_echo_and_trace(
@@ -801,11 +960,21 @@ def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | N
                         "id": req_id,
                         "error": {"code": -32601, "message": f"Unknown tool: {name}"},
                     }
+            inline_images = data.pop("_inline_images", []) if isinstance(data, dict) else []
+            content_blocks: list[dict] = [
+                {"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}
+            ]
+            for img in inline_images:
+                content_blocks.append({
+                    "type": "image",
+                    "data": img["data"],
+                    "mimeType": img["mimeType"],
+                })
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}],
+                    "content": content_blocks,
                     "isError": False,
                 },
             }

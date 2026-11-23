@@ -3,15 +3,18 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from primary_source_tracer.server import (
+    _extract_pdf_bytes,
     handle_jsonrpc_request,
     tool_inspect_and_classify_source,
     tool_compare_echo_and_trace,
+    tool_search_web_candidates,
     parse_openalex_work,
 )
 
@@ -135,6 +138,101 @@ class TestServer(unittest.TestCase):
         assert parsed["abstract_text"] == "Listening to Mozart temporarily improved spatial scores."
         assert "Frances H. Rauscher" in parsed["authors"]
         assert parsed["cited_by_count"] == 1420
+
+    def test_6_remote_scanned_pdf_emits_inline_mcp_image_blocks(self):
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
+        doc = fitz.open()
+        page = doc.new_page(width=200, height=200)
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 60), False)
+        pix.set_rect(pix.irect, (200, 200, 200))
+        page.insert_image(fitz.Rect(20, 20, 120, 120), pixmap=pix)
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        text, count, paths, inline_imgs = _extract_pdf_bytes(
+            pdf_bytes,
+            render_images=False,
+            render_base64=True,
+        )
+        assert count == 1
+        assert paths == []
+        assert len(inline_imgs) == 1
+        assert inline_imgs[0]["mimeType"] == "image/jpeg"
+
+        fake_fetched = {
+            "title": "scan.pdf",
+            "text": text,
+            "resource_type": "pdf",
+            "outbound_links": [],
+            "stock_images": [],
+            "has_table": False,
+            "page_count": count,
+            "rendered_page_images": [],
+            "inline_images": inline_imgs,
+            "error": None,
+        }
+        with patch("primary_source_tracer.server.fetch_document", return_value=fake_fetched):
+            resp = handle_jsonrpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 99,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "inspect_and_classify_source",
+                        "arguments": {"url_or_path": "https://example.edu/scan.pdf"},
+                    },
+                },
+                remote_safe=True,
+            )
+        blocks = resp["result"]["content"]
+        assert blocks[0]["type"] == "text"
+        parsed_json = json.loads(blocks[0]["text"])
+        assert parsed_json["preliminary_classification"] == "unreachable_or_empty"
+        assert parsed_json["inline_images_attached"] == 1
+        assert "_inline_images" not in parsed_json
+        assert len(blocks) == 2
+        assert blocks[1]["type"] == "image"
+        assert blocks[1]["mimeType"] == "image/jpeg"
+
+    def test_7_search_web_candidates_falls_back_when_ddg_blocked(self):
+        with (
+            patch(
+                "primary_source_tracer.server._search_duckduckgo",
+                return_value=([], "DuckDuckGo devolvió desafío anti-bot HTTP 202"),
+            ),
+            patch(
+                "primary_source_tracer.server._search_openalex_candidates",
+                return_value=[
+                    {
+                        "query_used": "Mozart effect",
+                        "title": "Music and spatial task performance",
+                        "url": "https://doi.org/10.1038/365611a0",
+                        "snippet": "DOI/Registro OpenAlex (1993, 1420 citas).",
+                        "search_engine": "openalex",
+                    }
+                ],
+            ),
+            patch(
+                "primary_source_tracer.server._search_wikipedia_candidates",
+                return_value=[
+                    {
+                        "query_used": "Mozart effect",
+                        "title": "[Wikipedia EN] Mozart effect",
+                        "url": "https://en.wikipedia.org/wiki/Mozart_effect",
+                        "snippet": "The Mozart effect is a set of research results...",
+                        "search_engine": "wikipedia_en",
+                    }
+                ],
+            ),
+        ):
+            res = tool_search_web_candidates(["Mozart effect"], max_results_per_query=5)
+        assert res["total_candidates"] == 2
+        assert any("202" in msg for msg in res.get("search_friction", []))
+        engines = {c["search_engine"] for c in res["candidates"]}
+        assert engines == {"openalex", "wikipedia_en"}
 
 
 if __name__ == "__main__":

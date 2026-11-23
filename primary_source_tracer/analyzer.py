@@ -6,7 +6,7 @@ import math
 import re
 from collections import Counter
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 STOCK_DOMAINS = (
     "istockphoto.com",
@@ -79,6 +79,27 @@ PAYWALL_PATTERNS = (
 DOI_REGEX = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
 
 PRIMARY_DOC_EXTENSIONS = (".pdf", ".csv", ".xlsx", ".xls", ".json", ".xml", ".zip")
+
+BIBLIOGRAPHIC_STUB_HOSTS = (
+    "pubmed.ncbi.nlm.nih.gov",
+    "eric.ed.gov",
+    "semanticscholar.org",
+    "openalex.org",
+)
+
+NOISY_QUERY_KEYS = {"term", "q", "query", "search", "s", "author", "authors"}
+NOISY_PATH_SEGMENTS = ("/search", "/help", "/login", "/signin", "/signup", "/register", "/cart", "/subscribe")
+
+
+def _is_noisy_search_or_nav_url(url: str) -> bool:
+    parsed = urlparse(url)
+    path_lower = (parsed.path or "").lower()
+    if any(seg in path_lower for seg in NOISY_PATH_SEGMENTS):
+        return True
+    qs = parse_qs(parsed.query or "")
+    if any(k.lower() in NOISY_QUERY_KEYS for k in qs):
+        return True
+    return False
 
 
 def categorize_domain(url_or_path: str) -> str:
@@ -172,8 +193,10 @@ class _CleanHTMLParser(HTMLParser):
             dom_cat = categorize_domain(url)
             is_doc_ext = any(path_lower.endswith(ext) for ext in PRIMARY_DOC_EXTENSIONS)
             is_external = bool(host and host != self.base_host) or not self.base_host
+            is_noisy = _is_noisy_search_or_nav_url(url)
             is_primary_candidate = (
-                (is_external or is_doc_ext)
+                not is_noisy
+                and (is_external or is_doc_ext)
                 and dom_cat != "social_or_video"
                 and (
                     is_doc_ext
@@ -267,6 +290,28 @@ def analyze_document_text(
             "outbound_links": links[:12],
         }
 
+    if clean_text.startswith("[SCANNED_FACSIMILE_PDF:"):
+        friction_signals.append(
+            "PDF escaneado (facsímil) sin capa de texto OCR; requiere inspección visual de las páginas renderizadas."
+        )
+        reasons.append(
+            "PDF escaneado sin texto extraíble (facsímil sin capa OCR); revisar imágenes renderizadas adjuntas o realizar OCR."
+        )
+        return {
+            "url_or_path": url_or_path,
+            "format": resource_type,
+            "domain_category": domain_cat,
+            "page_count": page_count,
+            "preliminary_classification": "unreachable_or_empty",
+            "classification_reasons": reasons,
+            "secondary_signals": secondary_signals,
+            "primary_signals": primary_signals,
+            "friction_signals": friction_signals,
+            "detected_identifiers": [],
+            "matched_excerpts": [{"marker": "scanned_facsimile", "excerpt": clean_text[:240]}],
+            "outbound_links": links[:12],
+        }
+
     detected_identifiers = sorted(
         {m.group(1).rstrip(".,;)") for m in DOI_REGEX.finditer(clean_text)}
     )
@@ -332,14 +377,30 @@ def analyze_document_text(
 
     primary_candidate_links = [l for l in links if l.get("is_primary_candidate")]
     is_official_or_pdf = resource_type == "pdf" or domain_cat in ("institutional_gov", "academic_edu")
-    is_paywalled_landing = resource_type == "html" and (is_false_pdf_landing or len(set(paywall_matches)) >= 2)
+    parsed_host = (urlparse(url_or_path).netloc or "").lower()
+    is_bibliographic_stub = (
+        resource_type == "html"
+        and any(h in parsed_host for h in BIBLIOGRAPHIC_STUB_HOSTS)
+        and len(clean_text) < 15000
+    )
+    is_paywalled_landing = resource_type == "html" and (
+        is_false_pdf_landing or len(set(paywall_matches)) >= 2 or is_bibliographic_stub
+    )
 
     if is_paywalled_landing:
         classification = "paywalled_abstract_only"
         id_hint = f" Identificadores extraídos para buscar copia abierta: {', '.join(detected_identifiers)}." if detected_identifiers else ""
-        reasons.append(
-            "Ficha bibliográfica o resumen restringido tras paywall editorial (muestra metadatos/abstract pero no el cuerpo ni tablas completas del documento)." + id_hint
-        )
+        if is_bibliographic_stub and not (is_false_pdf_landing or len(set(paywall_matches)) >= 2):
+            friction_signals.append(
+                "Ficha o índice bibliográfico (muestra metadatos/resumen, no el texto completo del documento)."
+            )
+            reasons.append(
+                "Ficha o índice bibliográfico (muestra metadatos/abstract pero no el cuerpo ni tablas completas del documento)." + id_hint
+            )
+        else:
+            reasons.append(
+                "Ficha bibliográfica o resumen restringido tras paywall editorial (muestra metadatos/abstract pero no el cuerpo ni tablas completas del documento)." + id_hint
+            )
     elif is_official_or_pdf and (
         len(format_matches) > 0
         or (len(attribution_matches) >= 2 and not effective_table)

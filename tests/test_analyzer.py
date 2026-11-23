@@ -126,6 +126,49 @@ def test_paywalled_landing_page_classified_and_extracts_doi():
     assert any("paywall" in r.lower() or "restringid" in r.lower() for r in res["classification_reasons"])
 
 
+def test_pubmed_stub_not_likely_primary_and_search_links_ignored():
+    html = """
+    <html><body>
+      <article>
+        <p>PMID: 8413624. Music and spatial task performance. Rauscher FH, Shaw GL, Ky KN.</p>
+        <a href="https://pubmed.ncbi.nlm.nih.gov/?term=Rauscher+FH%5BAuthor%5D">Rauscher FH</a>
+        <a href="https://pubmed.ncbi.nlm.nih.gov/help/">NCBI Help</a>
+        <a href="https://www.nature.com/articles/365611a0.pdf">Full text PDF</a>
+      </article>
+    </body></html>
+    """
+    parsed = extract_html_content(html, "https://pubmed.ncbi.nlm.nih.gov/8413624/")
+    cand_urls = {l["url"] for l in parsed["outbound_links"] if l["is_primary_candidate"]}
+    assert "https://pubmed.ncbi.nlm.nih.gov/?term=Rauscher+FH%5BAuthor%5D" not in cand_urls
+    assert "https://pubmed.ncbi.nlm.nih.gov/help/" not in cand_urls
+    assert "https://www.nature.com/articles/365611a0.pdf" in cand_urls
+
+    res = analyze_document_text(
+        text=parsed["text"],
+        url_or_path="https://pubmed.ncbi.nlm.nih.gov/8413624/",
+        resource_type="html",
+        agent_evidence_markers=["Rauscher", "spatial task"],
+        outbound_links=parsed["outbound_links"],
+        stock_images=[],
+        has_table=True,
+    )
+    assert res["preliminary_classification"] == "paywalled_abstract_only"
+    assert any("bibliográfic" in r.lower() for r in res["classification_reasons"])
+
+
+def test_scanned_facsimile_not_classified_as_secondary():
+    res = analyze_document_text(
+        text="[SCANNED_FACSIMILE_PDF: 1 página(s) con 1 imagen(es) escaneada(s) sin capa OCR; renderizado PNG local omitido en modo remoto]",
+        url_or_path="https://example.edu/Rauscher_1993.pdf",
+        resource_type="pdf",
+        agent_evidence_markers=["Mozart"],
+        outbound_links=[],
+        stock_images=[],
+    )
+    assert res["preliminary_classification"] == "unreachable_or_empty"
+    assert any("escaneado" in r.lower() or "ocr" in r.lower() for r in res["classification_reasons"])
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -144,6 +187,12 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_6_paywall(self):
         test_paywalled_landing_page_classified_and_extracts_doi()
+
+    def test_7_pubmed_stub_and_noisy_links(self):
+        test_pubmed_stub_not_likely_primary_and_search_links_ignored()
+
+    def test_8_scanned_facsimile_classification(self):
+        test_scanned_facsimile_not_classified_as_secondary()
 
 
 if __name__ == "__main__":
