@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "primary-source-tracer": {
+      "command": "python",
+      "args": [
+        "-m",
+        "primary_source_tracer.server"
+      ]
+    }
+  }
+}

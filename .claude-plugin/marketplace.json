@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "primary-source-tracer",
+  "description": "Domain-agnostic primary source tracing, echo-cluster detection, and secondary-source classification plugin.",
+  "owner": {
+    "name": "FelipeRomeroDUOC",
+    "url": "https://github.com/FelipeRomeroDUOC"
+  },
+  "plugins": [
+    {
+      "name": "primary-source-tracer",
+      "description": "Domain-agnostic MCP server + skill + rules for tracing primary sources, contrasting replications, detecting echo clusters, and classifying secondary sources.",
+      "version": "0.1.0",
+      "author": {
+        "name": "FelipeRomeroDUOC",
+        "url": "https://github.com/FelipeRomeroDUOC"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/FelipeRomeroDUOC/primary-source-tracer"
+    }
+  ]
+}

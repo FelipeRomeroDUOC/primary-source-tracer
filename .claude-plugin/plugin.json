@@ -1,0 +1,20 @@
+{
+  "name": "primary-source-tracer",
+  "version": "0.1.0",
+  "description": "Domain-agnostic plugin (MCP server + skill + rules) for tracing primary sources, contrasting replications, detecting echo clusters, and classifying secondary sources.",
+  "author": {
+    "name": "FelipeRomeroDUOC",
+    "url": "https://github.com/FelipeRomeroDUOC"
+  },
+  "homepage": "https://github.com/FelipeRomeroDUOC/primary-source-tracer",
+  "repository": "https://github.com/FelipeRomeroDUOC/primary-source-tracer",
+  "license": "MIT",
+  "keywords": [
+    "primary-sources",
+    "fact-checking",
+    "research",
+    "traceability",
+    "mcp"
+  ],
+  "skills": "./skills/"
+}

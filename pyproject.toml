@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "primary-source-tracer"
+version = "0.1.0"
+description = "Domain-agnostic MCP server and agent skill for tracing primary sources, detecting echo clusters, and classifying secondary sources."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+  { name = "FelipeRomeroDUOC" }
+]
+keywords = ["mcp", "primary-sources", "fact-checking", "research", "agent-skills", "traceability"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = []
+
+[project.optional-dependencies]
+pdf = [
+  "pypdf>=4.0.0",
+  "pymupdf>=1.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/FelipeRomeroDUOC/primary-source-tracer"
+Repository = "https://github.com/FelipeRomeroDUOC/primary-source-tracer"
+Issues = "https://github.com/FelipeRomeroDUOC/primary-source-tracer/issues"
+
+[project.scripts]
+primary-source-tracer-mcp = "primary_source_tracer.server:main"
+
+[tool.setuptools.packages.find]
+include = ["primary_source_tracer*"]

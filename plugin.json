@@ -1,0 +1,21 @@
+{
+  "name": "primary-source-tracer",
+  "displayName": "Primary Source Tracer",
+  "description": "Rastreador agnóstico al dominio para encontrar evidencia primaria, detectar bucles de eco y clasificar fuentes secundarias (incluyendo PDFs y sitios oficiales secundarios) con sus razones explícitas.",
+  "version": "0.1.0",
+  "author": {
+    "name": "FelipeRomeroDUOC",
+    "url": "https://github.com/FelipeRomeroDUOC"
+  },
+  "homepage": "https://github.com/FelipeRomeroDUOC/primary-source-tracer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FelipeRomeroDUOC/primary-source-tracer"
+  },
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Busca evidencia primaria verificable sobre este tema y lista también las fuentes secundarias indicando por qué lo son",
+    "Rastrea de dónde sale esta afirmación viral y determina si llega a un documento raíz o es un bucle de eco",
+    "Analiza estas URLs y PDFs para separar registros primarios de comunicados o resúmenes secundarios"
+  ]
+}

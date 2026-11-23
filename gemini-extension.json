@@ -1,0 +1,14 @@
+{
+  "name": "primary-source-tracer",
+  "version": "0.1.0",
+  "description": "Domain-agnostic MCP server and skill for tracing primary sources, detecting echo clusters, and classifying secondary sources.",
+  "contextFileName": "rules/AGENTS.md",
+  "mcpServers": {
+    "primary-source-tracer": {
+      "command": "python",
+      "args": [
+        "${extensionPath}/primary_source_tracer/server.py"
+      ]
+    }
+  }
+}
