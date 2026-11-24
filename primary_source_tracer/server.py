@@ -1149,26 +1149,35 @@ MCP_PROMPTS = [
 
 _FALLBACK_PROTOCOL = (
     "Protocolo Primary Source Tracer:\n"
-    "1. Define queries dinámicas (origen fundacional + réplicas/meta-análisis posteriores) y agent_evidence_markers.\n"
-    "2. Combina search_web_candidates con búsqueda web nativa si hay search_friction, y evalúa con compare_echo_and_trace.\n"
-    "3. Si aparece paywalled_abstract_only con open_access_resolution.oa_pdf_url, inspecciona esa URL abierta antes de rendirte.\n"
-    "4. Nunca clasifiques como primaria una nota de prensa, enciclopedia o revisión solo por ser PDF/.gov/.edu.\n"
-    "5. Entrega: (A) Evidencia Primaria Fundacional, (B) Réplicas/Meta-análisis, (C) Fuentes Secundarias Evaluadas con razón explícita. "
-    "Incluye SIEMPRE el enlace clickable exacto [título](URL) y etiqueta de acceso en cada fuente, separando lo observado en texto de lo atribuido o no verificado."
+    "1. Define queries dinámicas (origen fundacional + réplicas/contrastes posteriores) y agent_evidence_markers.\n"
+    "2. Evalúa al inicio si el tema tiene evidencia audiovisual relevante (declaraciones, entrevistas, charlas, hechos observables, facsímiles o gráficos); "
+    "cuando aplique, usa tu búsqueda web nativa para encontrar videos de YouTube o imágenes y revisa `content_images`, inspeccionándolos con `inspect_and_classify_source`.\n"
+    "3. Combina search_web_candidates con búsqueda web nativa si hay search_friction, y evalúa con compare_echo_and_trace.\n"
+    "4. Si aparece paywalled_abstract_only con open_access_resolution.oa_pdf_url, inspecciona esa URL abierta antes de rendirte.\n"
+    "5. Nunca clasifiques como primaria una nota de prensa, enciclopedia o revisión solo por ser PDF/.gov/.edu.\n"
+    "6. Entrega: (A) Evidencia Primaria Fundacional, (B) Réplicas/Contrastes, (C) Fuentes Secundarias Evaluadas con razón explícita. "
+    "Incluye SIEMPRE el enlace clickable exacto [título](URL) y etiqueta de acceso en cada fuente, separando lo observado en texto de lo atribuido o no verificado.\n"
+    "7. Cuando hayas verificado pruebas audiovisuales relevantes (YouTube con timestamp o imágenes/gráficos clave) o el usuario pida un dossier visual, "
+    "llama a `generate_evidence_html` para generar el artefacto HTML con embeds `?start=` y enlaces de respaldo."
 )
 
 
 def _load_skill_protocol_text() -> str:
-    skill_path = PLUGIN_ROOT / "skills" / "primary-source-search" / "SKILL.md"
-    try:
-        raw = skill_path.read_text(encoding="utf-8")
-        if raw.lstrip().startswith("---"):
-            parts = raw.split("---", 2)
-            if len(parts) == 3:
-                return parts[2].strip()
-        return raw.strip()
-    except OSError:
-        return _FALLBACK_PROTOCOL
+    candidates = (
+        PLUGIN_ROOT / "skills" / "primary-source-search" / "SKILL.md",
+        Path.cwd() / "skills" / "primary-source-search" / "SKILL.md",
+    )
+    for skill_path in candidates:
+        try:
+            raw = skill_path.read_text(encoding="utf-8")
+            if raw.lstrip().startswith("---"):
+                parts = raw.split("---", 2)
+                if len(parts) == 3:
+                    return parts[2].strip()
+            return raw.strip()
+        except OSError:
+            continue
+    return _FALLBACK_PROTOCOL
 
 
 def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | None:

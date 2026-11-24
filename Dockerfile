@@ -9,6 +9,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./
 COPY primary_source_tracer ./primary_source_tracer
+COPY skills ./skills
 
 RUN pip install --no-cache-dir ".[all]" \
     && useradd --create-home --shell /bin/bash appuser
