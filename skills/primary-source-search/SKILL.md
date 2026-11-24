@@ -37,11 +37,12 @@ Antes de lanzar la primera búsqueda, define explícitamente para el tema del us
 1. **Qué constituye Evidencia Primaria Fundacional** (el registro, documento, acta, grabación o experimento original donde nace el dato).
 2. **Qué constituye Evidencia Primaria de Replicación / Contraste** (mediciones o experimentos independientes posteriores con datos crudos propios a favor o en contra) y **Qué constituye Fuente Compilada de 2.º Orden** (meta-análisis, revisiones sistemáticas cuantitativas o auditorías oficiales que agregan múltiples registros primarios).
 3. **Qué constituye Fuente Secundaria** (incluyendo qué falsos primarios en PDF o sitios oficiales podrían aparecer).
-4. **¿Aplica Evidencia Audiovisual?** Evalúa explícitamente si el tema se beneficia de medios audiovisuales:
+4. **¿Aplica Evidencia Audiovisual o Visual / Facsimilar?** Evalúa explícitamente si el tema se beneficia de medios audiovisuales o documentos visuales:
    - *Declaraciones públicas, entrevistas, charlas o ruedas de prensa* → buscar video/transmisión original (p. ej. YouTube).
-   - *Hechos en terreno, demostraciones o registros históricos/visuales* → buscar grabaciones, fotos documentales o facsímiles.
+   - *Temas históricos, filológicos, lingüísticos, documentales o pre-digitales* → **SÍ requieren evidencia visual/facsimilar**: primeras ediciones, diccionarios antiguos, manuscritos, inscripciones o actas suelen existir únicamente como **imágenes digitalizadas o PDFs escaneados sin OCR** (p. ej., Internet Archive, Gallica/BnF, Biblioteca Digital Hispánica, Wikimedia Commons, repositorios de museos o bibliotecas nacionales).
+   - *Hechos en terreno, demostraciones o registros observables* → buscar grabaciones, fotos documentales o reportes en primera persona.
    - *Datos cuantitativos, tendencias o comparativas* → revisar `content_images` (gráficos/tablas visuales) en las fuentes inspeccionadas.
-   - *(Si el tema es puramente textual o normativo sin pruebas audiovisuales relevantes, no fuerces videos ni artefactos innecesarios.)*
+   - *(Solo si no existe ninguna evidencia visual, facsimilar ni audiovisual relevante —p. ej., una consulta puramente normativa contemporánea ya disponible en texto digital plano— evita forzar videos o artefactos artificiales.)*
 5. **Consultas dinámicas (`queries`)** —cubriendo origen, contrastes posteriores y, cuando aplique, consultas audiovisuales— y **Marcadores probatorios (`agent_evidence_markers`)** propios del tema.
 
 ### Fase 2: Búsqueda e Inspección Estructural
@@ -83,6 +84,6 @@ Presenta siempre el resultado con estas secciones y **con enlace clickable direc
      - `Clúster de Eco`: agrupa artículos que repiten prácticamente el mismo texto; verifica en `matched_excerpts` e indica explícitamente si se trata de **eco periodístico real** o de un **falso positivo por plantilla compartida** (ej. cabecera de repositorio o catálogo).
 4. **Métrica de Esfuerzo y Fricción**:
    - Total de búsquedas ejecutadas (MCP + web nativa si aplicó), total de fuentes inspeccionadas (primarias fundacionales, primarias de contraste, compiladas de 2.º orden y secundarias) y fricciones encontradas (desafíos anti-bot / `search_friction`, portales en blanco/rotos, certificados SSL, muros de pago o imágenes de stock).
-5. **Dossier HTML con Embeds Audiovisuales (cuando haya videos/imágenes relevantes o el usuario lo pida)**:
-   - Llama a `generate_evidence_html(topic, verdict, primary_sources, secondary_sources, notes, ...)` para generar un dossier HTML autocontenido con embeds de YouTube (`youtube-nocookie.com/embed/<id>?start=<segundos>`), figuras `<figure>` para imágenes/gráficos verificados, botones de respaldo clickables (por si el sandbox bloquea iframes) y la tabla colapsable de fuentes secundarias.
+5. **Dossier HTML con Embeds Audiovisuales y Visuales (cuando haya videos, imágenes, facsímiles o gráficos relevantes, o el usuario lo pida)**:
+   - Llama a `generate_evidence_html(topic, verdict, primary_sources, secondary_sources, notes, ...)` para generar un dossier HTML autocontenido con embeds de YouTube (`youtube-nocookie.com/embed/<id>?start=<segundos>`), figuras `<figure>` para imágenes, facsímiles o gráficos verificados, botones de respaldo clickables (por si el sandbox bloquea iframes) y la tabla colapsable de fuentes secundarias.
    - Si tu cliente soporta **Artifacts / Canvas** (como Claude.ai o Gemini), presenta ese HTML como artefacto interactivo; si trabajas en local, guárdalo en un archivo `.html` y entrégale el enlace clickable al usuario.
