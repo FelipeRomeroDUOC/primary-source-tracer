@@ -7,6 +7,7 @@ dist/
 .venv/
 venv/
 .superpowers/
+promo-video/
 *.pdf
 .DS_Store
 Thumbs.db
