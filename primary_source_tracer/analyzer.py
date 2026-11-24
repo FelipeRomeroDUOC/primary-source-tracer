@@ -190,6 +190,7 @@ class _CleanHTMLParser(HTMLParser):
         self.text_parts: list[str] = []
         self.outbound_links: list[dict] = []
         self.stock_images: list[str] = []
+        self.content_images: list[dict] = []
         self.has_table = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
@@ -205,11 +206,23 @@ class _CleanHTMLParser(HTMLParser):
         if t in ("table", "thead", "tbody"):
             self.has_table = True
         elif t == "img":
-            src = attr_map.get("src") or attr_map.get("data-src") or ""
-            if src:
+            src = (attr_map.get("src") or attr_map.get("data-src") or "").strip()
+            if src and not src.startswith("data:"):
                 full_src = urljoin(self.base_url, src)
-                if any(sd in full_src.lower() for sd in STOCK_DOMAINS):
+                lower_src = full_src.lower()
+                if any(sd in lower_src for sd in STOCK_DOMAINS):
                     self.stock_images.append(full_src)
+                elif (
+                    full_src.startswith(("http://", "https://"))
+                    and not lower_src.split("?")[0].endswith(".svg")
+                    and not any(
+                        noise in lower_src
+                        for noise in ("pixel", "spacer", "icon", "avatar", "logo", "emoji", "sprite", "1x1", "favicon")
+                    )
+                    and len(self.content_images) < 8
+                ):
+                    alt = " ".join((attr_map.get("alt") or "").split())[:140]
+                    self.content_images.append({"url": full_src, "alt": alt})
         elif t == "a":
             href = attr_map.get("href", "").strip()
             if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
@@ -284,6 +297,7 @@ def extract_html_content(html: str, base_url: str = "") -> dict:
         "text": clean_text,
         "outbound_links": dedup_links,
         "stock_images": parser.stock_images,
+        "content_images": parser.content_images,
         "has_table": parser.has_table,
     }
 
@@ -329,6 +343,28 @@ def analyze_document_text(
             "detected_identifiers": [],
             "matched_excerpts": [],
             "outbound_links": links[:12],
+        }
+
+    if clean_text.startswith("[VISUAL_IMAGE_RESOURCE:"):
+        primary_signals.append(
+            "Recurso visual (imagen directa) adjunto para inspección visual del agente."
+        )
+        reasons.append(
+            "Recurso visual directo (imagen): inspeccionar visualmente para determinar si constituye evidencia primaria documental/gráfica o contenido secundario/ilustrativo."
+        )
+        return {
+            "url_or_path": url_or_path,
+            "format": "image",
+            "domain_category": domain_cat,
+            "page_count": 1,
+            "preliminary_classification": "visual_media_requires_inspection",
+            "classification_reasons": reasons,
+            "secondary_signals": secondary_signals,
+            "primary_signals": primary_signals,
+            "friction_signals": friction_signals,
+            "detected_identifiers": [],
+            "matched_excerpts": [{"marker": "visual_image", "excerpt": clean_text[:240]}],
+            "outbound_links": [],
         }
 
     if clean_text.startswith("[SCANNED_FACSIMILE_PDF:"):

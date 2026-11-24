@@ -30,6 +30,14 @@ pdf = [
   "pypdf>=4.0.0",
   "pymupdf>=1.24.0",
 ]
+media = [
+  "youtube-transcript-api>=1.0.0",
+]
+all = [
+  "pypdf>=4.0.0",
+  "pymupdf>=1.24.0",
+  "youtube-transcript-api>=1.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/FelipeRomeroDUOC/primary-source-tracer"

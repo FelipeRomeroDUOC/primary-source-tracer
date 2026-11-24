@@ -32,6 +32,14 @@ from primary_source_tracer.analyzer import (
     compute_echo_clusters,
     extract_html_content,
 )
+from primary_source_tracer.audiovisual import (
+    IMAGE_EXTENSIONS,
+    MAX_IMAGE_DOWNLOAD_BYTES,
+    detect_image_mime,
+    extract_youtube_video_id,
+    fetch_youtube_source,
+    prepare_image_mcp_block,
+)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -267,6 +275,10 @@ def _infer_resource_type(url_or_path: str, content_type: str = "") -> str:
     ct = content_type.lower()
     if lower.endswith(".pdf") or "application/pdf" in ct:
         return "pdf"
+    if lower.endswith(IMAGE_EXTENSIONS) or ct.startswith("image/"):
+        return "image"
+    if extract_youtube_video_id(url_or_path):
+        return "video"
     if lower.endswith((".csv", ".xlsx", ".xls", ".json", ".xml")) or any(
         k in ct for k in ("csv", "spreadsheet", "excel")
     ):
@@ -281,6 +293,7 @@ def fetch_document(
     timeout: int = 8,
     remote_safe: bool = False,
     inline_scanned_images: bool = False,
+    inline_direct_images: bool = False,
 ) -> dict:
     target = (url_or_path or "").strip()
     if remote_safe:
@@ -292,12 +305,16 @@ def fetch_document(
                 "resource_type": _infer_resource_type(target),
                 "outbound_links": [],
                 "stock_images": [],
+                "content_images": [],
                 "has_table": False,
                 "page_count": 1,
                 "rendered_page_images": [],
                 "inline_images": [],
                 "error": blocked_reason,
             }
+
+    if target.startswith(("http://", "https://")) and extract_youtube_video_id(target):
+        return fetch_youtube_source(target, timeout=timeout, headers=BROWSER_HEADERS)
 
     local_candidate: Path | None = None
     if not remote_safe:
@@ -314,6 +331,32 @@ def fetch_document(
     if local_candidate is not None and local_candidate.exists():
         raw_bytes = local_candidate.read_bytes()
         res_type = _infer_resource_type(str(local_candidate))
+        if res_type == "image" or detect_image_mime(raw_bytes, url_or_path=str(local_candidate)):
+            img_block = (
+                prepare_image_mcp_block(raw_bytes, url_or_path=str(local_candidate))
+                if inline_direct_images
+                else None
+            )
+            return {
+                "title": local_candidate.name,
+                "text": (
+                    f"[VISUAL_IMAGE_RESOURCE: {local_candidate.name}, {len(raw_bytes) // 1024} KB; "
+                    + (
+                        "imagen adjunta en la respuesta MCP para inspección visual directa]"
+                        if img_block
+                        else "inspeccionar visualmente con inspect_and_classify_source o read_file]"
+                    )
+                ),
+                "resource_type": "image",
+                "outbound_links": [],
+                "stock_images": [],
+                "content_images": [],
+                "has_table": False,
+                "page_count": 1,
+                "rendered_page_images": [str(local_candidate)],
+                "inline_images": [img_block] if img_block else [],
+                "error": None,
+            }
         if res_type == "pdf" or raw_bytes.lstrip()[:4] == b"%PDF":
             text, page_count, rendered_images, inline_images = _extract_pdf_bytes(
                 raw_bytes,
@@ -326,6 +369,7 @@ def fetch_document(
                 "resource_type": "pdf",
                 "outbound_links": [],
                 "stock_images": [],
+                "content_images": [],
                 "has_table": "|" in text or "\t" in text,
                 "page_count": page_count,
                 "rendered_page_images": rendered_images,
@@ -340,6 +384,7 @@ def fetch_document(
             "resource_type": res_type,
             "outbound_links": parsed["outbound_links"],
             "stock_images": parsed["stock_images"],
+            "content_images": parsed.get("content_images", []),
             "has_table": parsed["has_table"],
             "page_count": 1,
             "rendered_page_images": [],
@@ -354,6 +399,7 @@ def fetch_document(
             "resource_type": _infer_resource_type(target),
             "outbound_links": [],
             "stock_images": [],
+            "content_images": [],
             "has_table": False,
             "page_count": 1,
             "rendered_page_images": [],
@@ -370,7 +416,35 @@ def fetch_document(
     try:
         with opener.open(req, timeout=timeout) as resp:
             content_type = resp.headers.get("Content-Type", "")
-            raw_bytes = resp.read(2_500_000)
+            raw_bytes = resp.read(MAX_IMAGE_DOWNLOAD_BYTES)
+            if detect_image_mime(raw_bytes, content_type=content_type, url_or_path=target):
+                img_block = (
+                    prepare_image_mcp_block(raw_bytes, content_type=content_type, url_or_path=target)
+                    if inline_direct_images
+                    else None
+                )
+                img_name = Path(urllib.parse.urlparse(target).path).name or target
+                return {
+                    "title": img_name,
+                    "text": (
+                        f"[VISUAL_IMAGE_RESOURCE: {img_name}, {len(raw_bytes) // 1024} KB; "
+                        + (
+                            "imagen adjunta en la respuesta MCP para inspección visual directa]"
+                            if img_block
+                            else "llama a inspect_and_classify_source sobre esta URL para inspeccionarla visualmente]"
+                        )
+                    ),
+                    "resource_type": "image",
+                    "outbound_links": [],
+                    "stock_images": [],
+                    "content_images": [],
+                    "has_table": False,
+                    "page_count": 1,
+                    "rendered_page_images": [],
+                    "inline_images": [img_block] if img_block else [],
+                    "error": None,
+                }
+            raw_bytes = raw_bytes[:2_500_000]
             is_pdf_bytes = raw_bytes.lstrip()[:4] == b"%PDF" or "application/pdf" in content_type.lower()
             if is_pdf_bytes:
                 text, page_count, rendered_images, inline_images = _extract_pdf_bytes(
@@ -384,6 +458,7 @@ def fetch_document(
                     "resource_type": "pdf",
                     "outbound_links": [],
                     "stock_images": [],
+                    "content_images": [],
                     "has_table": "|" in text or "\t" in text,
                     "page_count": page_count,
                     "rendered_page_images": rendered_images,
@@ -399,6 +474,7 @@ def fetch_document(
                 "resource_type": res_type,
                 "outbound_links": parsed["outbound_links"],
                 "stock_images": parsed["stock_images"],
+                "content_images": parsed.get("content_images", []),
                 "has_table": parsed["has_table"],
                 "page_count": 1,
                 "rendered_page_images": [],
@@ -633,6 +709,21 @@ def tool_search_web_candidates(queries: list[str], max_results_per_query: int = 
 def _attach_browserless_enhancements(analysis: dict, fetched: dict) -> dict:
     analysis["title"] = fetched.get("title", "")
     analysis["rendered_page_images"] = fetched.get("rendered_page_images", [])
+    content_images = fetched.get("content_images") or []
+    if content_images:
+        analysis["content_images"] = content_images[:5]
+    media_meta = fetched.get("media_metadata") or {}
+    if media_meta:
+        analysis["media_metadata"] = media_meta
+        vid = media_meta.get("video_id")
+        if vid:
+            for ex in analysis.get("matched_excerpts") or []:
+                m = re.search(r"\[(?:(\d{2}):)?(\d{2}):(\d{2})\]", ex.get("excerpt", ""))
+                if m:
+                    hrs = int(m.group(1) or 0)
+                    mins = int(m.group(2))
+                    secs = int(m.group(3))
+                    ex["timestamp_url"] = f"https://youtu.be/{vid}?t={hrs * 3600 + mins * 60 + secs}"
     if analysis["rendered_page_images"]:
         analysis["primary_signals"].append(
             f"PDF escaneado renderizado sin navegador a {len(analysis['rendered_page_images'])} imagen(es) PNG local(es)."
@@ -682,6 +773,7 @@ def tool_inspect_and_classify_source(
         url_or_path,
         remote_safe=remote_safe,
         inline_scanned_images=remote_safe,
+        inline_direct_images=True,
     )
     analysis = analyze_document_text(
         text=fetched["text"],
@@ -880,9 +972,10 @@ MCP_TOOLS = [
     {
         "name": "inspect_and_classify_source",
         "description": (
-            "Inspecciona una URL (HTML o PDF) o archivo PDF/HTML local sin necesidad de navegador. "
-            "Evalúa señales estructurales (primaria vs. secundaria/falso primario PDF/.gov/paywall), "
-            "renderiza automáticamente páginas de PDFs escaneados a PNG y resuelve DOIs vía OpenAlex."
+            "Inspecciona una URL (HTML, PDF, imagen directa PNG/JPG/WEBP o video de YouTube) o archivo local sin necesidad de navegador. "
+            "Evalúa señales estructurales (primaria vs. secundaria/falso primario PDF/.gov/paywall), extrae imágenes informativas (`content_images`), "
+            "devuelve imágenes directas y páginas de PDFs escaneados como imagen MCP, extrae transcripciones con timestamps y enlaces de YouTube, "
+            "y resuelve DOIs vía OpenAlex."
         ),
         "inputSchema": {
             "type": "object",
