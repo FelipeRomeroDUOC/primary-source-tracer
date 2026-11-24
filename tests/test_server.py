@@ -281,6 +281,27 @@ class TestServer(unittest.TestCase):
         selected_none = _select_relevant_bridge_links(no_match_src, ["UnrelatedMarkerXYZ"])
         assert selected_none == []
 
+    def test_9_mcp_prompts_list_and_get(self):
+        init_resp = handle_jsonrpc_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        assert "prompts" in init_resp["result"]["capabilities"]
+
+        list_resp = handle_jsonrpc_request({"jsonrpc": "2.0", "id": 2, "method": "prompts/list", "params": {}})
+        prompts = list_resp["result"]["prompts"]
+        assert len(prompts) == 1
+        assert prompts[0]["name"] == "primary-source-audit"
+
+        get_resp = handle_jsonrpc_request({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "prompts/get",
+            "params": {"name": "primary-source-audit", "arguments": {"topic": "Efecto Mozart"}},
+        })
+        msgs = get_resp["result"]["messages"]
+        assert len(msgs) == 1
+        text = msgs[0]["content"]["text"]
+        assert "Efecto Mozart" in text
+        assert "enlace directo clickable" in text or "URL_exacta" in text
+
 
 if __name__ == "__main__":
     unittest.main()

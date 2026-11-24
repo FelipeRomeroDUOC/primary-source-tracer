@@ -932,6 +932,47 @@ MCP_TOOLS = [
 ]
 
 
+MCP_PROMPTS = [
+    {
+        "name": "primary-source-audit",
+        "description": (
+            "Protocolo completo de Primary Source Tracer: busca origen + réplicas, "
+            "audita clústeres de eco, sigue enlaces abiertos OpenAlex y exige enlaces clickables en todas las fuentes."
+        ),
+        "arguments": [
+            {
+                "name": "topic",
+                "description": "Afirmación, estudio, norma o tema a verificar.",
+                "required": True,
+            }
+        ],
+    }
+]
+
+_FALLBACK_PROTOCOL = (
+    "Protocolo Primary Source Tracer:\n"
+    "1. Define queries dinámicas (origen fundacional + réplicas/meta-análisis posteriores) y agent_evidence_markers.\n"
+    "2. Combina search_web_candidates con búsqueda web nativa si hay search_friction, y evalúa con compare_echo_and_trace.\n"
+    "3. Si aparece paywalled_abstract_only con open_access_resolution.oa_pdf_url, inspecciona esa URL abierta antes de rendirte.\n"
+    "4. Nunca clasifiques como primaria una nota de prensa, enciclopedia o revisión solo por ser PDF/.gov/.edu.\n"
+    "5. Entrega: (A) Evidencia Primaria Fundacional, (B) Réplicas/Meta-análisis, (C) Fuentes Secundarias Evaluadas con razón explícita. "
+    "Incluye SIEMPRE el enlace clickable exacto [título](URL) y etiqueta de acceso en cada fuente, separando lo observado en texto de lo atribuido o no verificado."
+)
+
+
+def _load_skill_protocol_text() -> str:
+    skill_path = PLUGIN_ROOT / "skills" / "primary-source-search" / "SKILL.md"
+    try:
+        raw = skill_path.read_text(encoding="utf-8")
+        if raw.lstrip().startswith("---"):
+            parts = raw.split("---", 2)
+            if len(parts) == 3:
+                return parts[2].strip()
+        return raw.strip()
+    except OSError:
+        return _FALLBACK_PROTOCOL
+
+
 def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | None:
     method = request.get("method", "")
     req_id = request.get("id")
@@ -943,12 +984,47 @@ def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | N
             "id": req_id,
             "result": {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
+                "capabilities": {"tools": {}, "prompts": {"listChanged": False}},
                 "serverInfo": {"name": "primary-source-tracer", "version": "0.1.0"},
             },
         }
     if method.startswith("notifications/"):
         return None
+    if method == "prompts/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"prompts": MCP_PROMPTS},
+        }
+    if method == "prompts/get":
+        prompt_name = params.get("name", "")
+        prompt_args = params.get("arguments") or {}
+        if prompt_name != "primary-source-audit":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32602, "message": f"Unknown prompt: {prompt_name}"},
+            }
+        topic = (prompt_args.get("topic") or "").strip() or "[Tema o afirmación pendiente de especificar]"
+        protocol_text = _load_skill_protocol_text()
+        full_text = (
+            f"Audita y rastrea la evidencia primaria para el siguiente tema/afirmación:\n"
+            f"> {topic}\n\n"
+            f"Sigue estrictamente este protocolo:\n\n{protocol_text}"
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "description": MCP_PROMPTS[0]["description"],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {"type": "text", "text": full_text},
+                    }
+                ],
+            },
+        }
     if method == "tools/list":
         return {
             "jsonrpc": "2.0",
