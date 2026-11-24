@@ -34,16 +34,21 @@ Usa esta skill cada vez que el usuario pida buscar **evidencia primaria**, verif
 
 ### Fase 1: Discernimiento Dinámico del Dominio
 Antes de lanzar la primera búsqueda, define explícitamente para el tema del usuario:
-1. **Qué constituye Evidencia Primaria Fundacional** (el registro, documento, acta o experimento original donde nace el dato).
+1. **Qué constituye Evidencia Primaria Fundacional** (el registro, documento, acta, grabación o experimento original donde nace el dato).
 2. **Qué constituye Evidencia Primaria de Replicación / Contraste** (mediciones o experimentos independientes posteriores con datos crudos propios a favor o en contra) y **Qué constituye Fuente Compilada de 2.º Orden** (meta-análisis, revisiones sistemáticas cuantitativas o auditorías oficiales que agregan múltiples registros primarios).
 3. **Qué constituye Fuente Secundaria** (incluyendo qué falsos primarios en PDF o sitios oficiales podrían aparecer).
-4. **Consultas dinámicas (`queries`)** —cubriendo tanto el origen como las réplicas/contrastes posteriores— y **Marcadores probatorios (`agent_evidence_markers`)** propios del tema.
+4. **¿Aplica Evidencia Audiovisual?** Evalúa explícitamente si el tema se beneficia de medios audiovisuales:
+   - *Declaraciones públicas, entrevistas, charlas o ruedas de prensa* → buscar video/transmisión original (p. ej. YouTube).
+   - *Hechos en terreno, demostraciones o registros históricos/visuales* → buscar grabaciones, fotos documentales o facsímiles.
+   - *Datos cuantitativos, tendencias o comparativas* → revisar `content_images` (gráficos/tablas visuales) en las fuentes inspeccionadas.
+   - *(Si el tema es puramente textual o normativo sin pruebas audiovisuales relevantes, no fuerces videos ni artefactos innecesarios.)*
+5. **Consultas dinámicas (`queries`)** —cubriendo origen, contrastes posteriores y, cuando aplique, consultas audiovisuales— y **Marcadores probatorios (`agent_evidence_markers`)** propios del tema.
 
 ### Fase 2: Búsqueda e Inspección Estructural
 1. Descubre candidatos combinando:
    - `search_web_candidates(queries=...)` del servidor MCP `primary-source-tracer`, y
-   - si `search_web_candidates` reporta `search_friction` (p. ej. bloqueo anti-bot en DuckDuckGo) o necesitas cobertura de prensa/medios/portales generales, combina con tu **búsqueda web nativa** (`search_web` o equivalente) y el subagente `browser` cuando se requiera inspección visual interactiva.
-2. Evalúa las fuentes candidatas con `inspect_and_classify_source(url_or_path=..., agent_evidence_markers=...)` o en lote con `compare_echo_and_trace(urls=..., agent_evidence_markers=..., follow_bridge_links=True)`.
+   - tu **búsqueda web nativa** (`search_web` o equivalente) siempre que: (a) Fase 1 identifique relevancia audiovisual (para localizar entrevistas, conferencias, videos en YouTube o evidencia gráfica), (b) necesites cobertura de prensa/medios generales, o (c) `search_web_candidates` reporte `search_friction`. Usa el subagente `browser` si está disponible y se requiere inspección interactiva.
+2. Evalúa las fuentes candidatas con `inspect_and_classify_source(url_or_path=..., agent_evidence_markers=...)` o en lote con `compare_echo_and_trace(urls=..., agent_evidence_markers=..., follow_bridge_links=True)`. Revisa `content_images` en las páginas inspeccionadas si contienen gráficos, mapas o fotos documentales clave.
 
 ### Fase 3: Salto desde Fuentes Puente y Manejo de Paywalls / Fuentes Inaccesibles
 1. **Salto desde Fuentes Puente (*Link-Hopping*)**:
