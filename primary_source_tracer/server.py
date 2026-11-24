@@ -694,6 +694,34 @@ def tool_inspect_and_classify_source(
     return budgeted
 
 
+def _select_relevant_bridge_links(src: dict, markers: list[str]) -> list[dict]:
+    candidates = [l for l in src.get("outbound_links", []) if l.get("is_primary_candidate")]
+    if not candidates:
+        return []
+    marker_tokens = {
+        tok.lower()
+        for m in (markers or [])
+        for tok in re.findall(r"[a-zA-Záéíóúñü0-9]{4,}", m)
+    }
+    scored: list[tuple[tuple[bool, int, bool], dict]] = []
+    for link in candidates:
+        haystack = f"{link.get('anchor_text', '')} {link.get('url', '')}".lower()
+        is_oa = "[openalex open access pdf]" in haystack
+        hits = sum(1 for tok in marker_tokens if tok in haystack)
+        is_pdf = link.get("url", "").lower().split("?")[0].endswith(".pdf")
+        scored.append(((is_oa, hits, is_pdf), link))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    if len(scored) > 4 and marker_tokens:
+        matching = [pair[1] for pair in scored if pair[0][0] or pair[0][1] > 0]
+        if matching:
+            return matching
+        src_url_lower = (src.get("url_or_path") or "").lower()
+        if any(k in src_url_lower for k in ("list_of_", "misconceptions", "category:", "/directory")):
+            return []
+    return [pair[1] for pair in scored]
+
+
 def tool_compare_echo_and_trace(
     urls: list[str],
     agent_evidence_markers: list[str] | None = None,
@@ -748,11 +776,9 @@ def tool_compare_echo_and_trace(
         for src in initial_sources:
             if hops_done >= cap_hops:
                 break
-            for link in src.get("outbound_links", []):
+            for link in _select_relevant_bridge_links(src, markers):
                 if hops_done >= cap_hops:
                     break
-                if not link.get("is_primary_candidate"):
-                    continue
                 target_url = link["url"]
                 key = _norm_key(target_url)
                 if key in visited_keys:

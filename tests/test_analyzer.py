@@ -200,6 +200,27 @@ def test_wikipedia_with_tables_and_meta_analysis_not_likely_primary():
     assert meta_res["preliminary_classification"] == "official_or_pdf_but_secondary"
 
 
+def test_bot_challenge_page_classified_unreachable():
+    res = analyze_document_text(
+        text="Client Challenge. Please enable JavaScript and cookies to continue.",
+        url_or_path="https://www.jstor.org/stable/3333640",
+        resource_type="html",
+        agent_evidence_markers=["Mozart"],
+        outbound_links=[
+            {
+                "url": "https://www.jstor.org/privacy",
+                "anchor_text": "Privacy",
+                "domain_category": "other",
+                "is_primary_candidate": False,
+            }
+        ],
+        stock_images=[],
+    )
+    assert res["preliminary_classification"] == "unreachable_or_empty"
+    assert res["outbound_links"] == []
+    assert any("anti-bot" in r.lower() or "javascript" in r.lower() for r in res["classification_reasons"])
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -227,6 +248,9 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_9_wikipedia_and_meta_analysis_classification(self):
         test_wikipedia_with_tables_and_meta_analysis_not_likely_primary()
+
+    def test_10_bot_challenge_classification(self):
+        test_bot_challenge_page_classified_unreachable()
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from primary_source_tracer.server import (
     _extract_pdf_bytes,
+    _select_relevant_bridge_links,
     handle_jsonrpc_request,
     tool_inspect_and_classify_source,
     tool_compare_echo_and_trace,
@@ -233,6 +234,52 @@ class TestServer(unittest.TestCase):
         assert any("202" in msg for msg in res.get("search_friction", []))
         engines = {c["search_engine"] for c in res["candidates"]}
         assert engines == {"openalex", "wikipedia_en"}
+
+    def test_8_bridge_relevance_filters_unrelated_giant_list_links(self):
+        src = {
+            "url_or_path": "https://en.wikipedia.org/wiki/List_of_common_misconceptions",
+            "outbound_links": [
+                {
+                    "url": "https://www.treasury.gov/currency/history",
+                    "anchor_text": "US Treasury currency",
+                    "is_primary_candidate": True,
+                },
+                {
+                    "url": "https://www.federalreserve.gov/notes",
+                    "anchor_text": "Federal Reserve bank notes",
+                    "is_primary_candidate": True,
+                },
+                {
+                    "url": "https://www.nasa.gov/moon",
+                    "anchor_text": "NASA Moon landing",
+                    "is_primary_candidate": True,
+                },
+                {
+                    "url": "https://www.noaa.gov/weather",
+                    "anchor_text": "NOAA weather",
+                    "is_primary_candidate": True,
+                },
+                {
+                    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/",
+                    "anchor_text": "Rauscher Mozart spatial reasoning study",
+                    "is_primary_candidate": True,
+                },
+            ],
+        }
+        selected = _select_relevant_bridge_links(src, ["Rauscher", "Mozart", "spatial"])
+        assert len(selected) == 1
+        assert selected[0]["url"] == "https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/"
+
+        no_match_src = dict(src)
+        no_match_src["outbound_links"] = src["outbound_links"] + [
+            {
+                "url": "https://www.cdc.gov/flu",
+                "anchor_text": "CDC flu info",
+                "is_primary_candidate": True,
+            }
+        ]
+        selected_none = _select_relevant_bridge_links(no_match_src, ["UnrelatedMarkerXYZ"])
+        assert selected_none == []
 
 
 if __name__ == "__main__":

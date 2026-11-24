@@ -86,6 +86,16 @@ PAYWALL_PATTERNS = (
     r"\brent or buy\b",
 )
 
+BOT_CHALLENGE_PATTERNS = (
+    r"\bclient challenge\b",
+    r"\benable javascript and cookies to continue\b",
+    r"\bplease enable javascript\b",
+    r"\bchecking your browser\b",
+    r"\bverify you are human\b",
+    r"\bray id:\s*[0-9a-f]+\b",
+    r"\bpardon our interruption\b",
+)
+
 DOI_REGEX = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
 
 PRIMARY_DOC_EXTENSIONS = (".pdf", ".csv", ".xlsx", ".xls", ".json", ".xml", ".zip")
@@ -320,6 +330,28 @@ def analyze_document_text(
             "detected_identifiers": [],
             "matched_excerpts": [{"marker": "scanned_facsimile", "excerpt": clean_text[:240]}],
             "outbound_links": links[:12],
+        }
+
+    if len(clean_text) < 2500 and any(re.search(pat, clean_text, flags=re.IGNORECASE) for pat in BOT_CHALLENGE_PATTERNS):
+        friction_signals.append(
+            "Portal bloqueado por desafío anti-bot, CAPTCHA o requisito de JavaScript/cookies."
+        )
+        reasons.append(
+            "Portal bloqueado por desafío anti-bot o requisito de JavaScript (no entrega el contenido real del documento)."
+        )
+        return {
+            "url_or_path": url_or_path,
+            "format": resource_type,
+            "domain_category": domain_cat,
+            "page_count": page_count,
+            "preliminary_classification": "unreachable_or_empty",
+            "classification_reasons": reasons,
+            "secondary_signals": secondary_signals,
+            "primary_signals": primary_signals,
+            "friction_signals": friction_signals,
+            "detected_identifiers": [],
+            "matched_excerpts": [{"marker": "bot_challenge", "excerpt": " ".join(clean_text[:240].split())}],
+            "outbound_links": [],
         }
 
     detected_identifiers = sorted(
