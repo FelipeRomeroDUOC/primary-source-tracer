@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "primary-source-tracer": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT:-.}/primary_source_tracer/server.py"
-      ]
+      "type": "http",
+      "url": "https://primary-source-tracer.onrender.com/mcp"
     }
   }
 }
