@@ -92,6 +92,10 @@ BOT_CHALLENGE_PATTERNS = (
     r"\bplease enable javascript\b",
     r"\bchecking your browser\b",
     r"\bverify you are human\b",
+    r"\bi am not a robot\b",
+    r"\bnot a robot\b",
+    r"\brecaptcha\b",
+    r"\bsecurity check\b",
     r"\bray id:\s*[0-9a-f]+\b",
     r"\bpardon our interruption\b",
 )
@@ -108,7 +112,24 @@ BIBLIOGRAPHIC_STUB_HOSTS = (
 )
 
 NOISY_QUERY_KEYS = {"term", "q", "query", "search", "s", "author", "authors"}
-NOISY_PATH_SEGMENTS = ("/search", "/help", "/login", "/signin", "/signup", "/register", "/cart", "/subscribe")
+NOISY_PATH_SEGMENTS = (
+    "/search",
+    "/help",
+    "/guide",
+    "/account",
+    "/about",
+    "/policies",
+    "/privacy",
+    "/terms",
+    "/cookies",
+    "/home",
+    "/login",
+    "/signin",
+    "/signup",
+    "/register",
+    "/cart",
+    "/subscribe",
+)
 
 
 def _is_noisy_search_or_nav_url(url: str) -> bool:

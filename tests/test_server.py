@@ -302,6 +302,29 @@ class TestServer(unittest.TestCase):
         assert "Efecto Mozart" in text
         assert "enlace directo clickable" in text or "URL_exacta" in text
 
+    def test_10_batch_scanned_pdf_suggests_inspect_and_classify_source(self):
+        fake_fetched = {
+            "title": "scan.pdf",
+            "text": "[SCANNED_FACSIMILE_PDF: 1 página(s) con 1 imagen(es) escaneada(s) sin capa OCR; renderizado PNG local omitido en modo remoto]",
+            "resource_type": "pdf",
+            "outbound_links": [],
+            "stock_images": [],
+            "has_table": False,
+            "page_count": 1,
+            "rendered_page_images": [],
+            "inline_images": [],
+            "error": None,
+        }
+        with patch("primary_source_tracer.server.fetch_document", return_value=fake_fetched):
+            res = tool_compare_echo_and_trace(
+                urls=["https://example.edu/scan.pdf"],
+                agent_evidence_markers=["Mozart"],
+                remote_safe=True,
+            )
+        src = res["evaluated_sources"][0]
+        assert src["preliminary_classification"] == "unreachable_or_empty"
+        assert any("inspect_and_classify_source" in r for r in src["classification_reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()

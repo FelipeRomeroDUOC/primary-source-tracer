@@ -637,6 +637,16 @@ def _attach_browserless_enhancements(analysis: dict, fetched: dict) -> dict:
         analysis["primary_signals"].append(
             f"PDF escaneado renderizado sin navegador a {len(analysis['rendered_page_images'])} imagen(es) PNG local(es)."
         )
+    elif (
+        (fetched.get("text") or "").startswith("[SCANNED_FACSIMILE_PDF:")
+        and not fetched.get("inline_images")
+    ):
+        hint = (
+            "En modo remoto por lotes no se adjuntan imágenes; llama a inspect_and_classify_source "
+            "sobre esta URL para recibir las páginas renderizadas como imagen."
+        )
+        analysis["friction_signals"].append(hint)
+        analysis["classification_reasons"].append(hint)
     if fetched.get("error"):
         analysis["friction_signals"].append(fetched["error"])
         if analysis["preliminary_classification"] == "unreachable_or_empty":

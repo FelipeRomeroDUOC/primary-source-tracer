@@ -241,6 +241,32 @@ def test_html_news_with_layout_table_and_attribution_not_likely_primary():
     assert res["preliminary_classification"] == "secondary_no_outbound_proof"
 
 
+def test_recaptcha_and_ncbi_guide_account_links_filtered():
+    html = """
+    <html><body>
+      <p>PMC security check: please verify you are not a robot via reCAPTCHA.</p>
+      <a href="https://www.ncbi.nlm.nih.gov/guide/all/">NCBI Guide</a>
+      <a href="https://account.ncbi.nlm.nih.gov/account/login/">NCBI Account</a>
+      <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/">Article</a>
+    </body></html>
+    """
+    parsed = extract_html_content(html, "https://example.com/page")
+    cand_urls = {l["url"] for l in parsed["outbound_links"] if l["is_primary_candidate"]}
+    assert "https://www.ncbi.nlm.nih.gov/guide/all/" not in cand_urls
+    assert "https://account.ncbi.nlm.nih.gov/account/login/" not in cand_urls
+    assert "https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/" in cand_urls
+
+    bot_res = analyze_document_text(
+        text=parsed["text"],
+        url_or_path="https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/",
+        resource_type="html",
+        agent_evidence_markers=["Mozart"],
+        outbound_links=parsed["outbound_links"],
+        stock_images=[],
+    )
+    assert bot_res["preliminary_classification"] == "unreachable_or_empty"
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -274,6 +300,9 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_11_news_table_attribution(self):
         test_html_news_with_layout_table_and_attribution_not_likely_primary()
+
+    def test_12_recaptcha_and_nav_links(self):
+        test_recaptcha_and_ncbi_guide_account_links_filtered()
 
 
 if __name__ == "__main__":
