@@ -1,10 +1,10 @@
 {
   "mcpServers": {
     "primary-source-tracer": {
+      "type": "stdio",
       "command": "python",
       "args": [
-        "-m",
-        "primary_source_tracer.server"
+        "${CLAUDE_PLUGIN_ROOT:-.}/primary_source_tracer/server.py"
       ]
     }
   }
