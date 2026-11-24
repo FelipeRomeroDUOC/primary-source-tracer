@@ -169,6 +169,37 @@ def test_scanned_facsimile_not_classified_as_secondary():
     assert any("escaneado" in r.lower() or "ocr" in r.lower() for r in res["classification_reasons"])
 
 
+def test_wikipedia_with_tables_and_meta_analysis_not_likely_primary():
+    wiki_res = analyze_document_text(
+        text="Mozart effect entry with table data and citations.",
+        url_or_path="https://en.wikipedia.org/wiki/Mozart_effect",
+        resource_type="html",
+        agent_evidence_markers=["Mozart effect"],
+        outbound_links=[
+            {
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC1281386/",
+                "anchor_text": "Full text PDF",
+                "domain_category": "institutional_gov",
+                "is_primary_candidate": True,
+            }
+        ],
+        stock_images=[],
+        has_table=True,
+    )
+    assert wiki_res["preliminary_classification"] == "secondary_bridge"
+
+    meta_res = analyze_document_text(
+        text="A multiverse meta-analysis of the Mozart effect across 39 studies.",
+        url_or_path="https://university.edu/studies/meta.pdf",
+        resource_type="pdf",
+        agent_evidence_markers=["Mozart effect"],
+        outbound_links=[],
+        stock_images=[],
+        has_table=True,
+    )
+    assert meta_res["preliminary_classification"] == "official_or_pdf_but_secondary"
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -193,6 +224,9 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_8_scanned_facsimile_classification(self):
         test_scanned_facsimile_not_classified_as_secondary()
+
+    def test_9_wikipedia_and_meta_analysis_classification(self):
+        test_wikipedia_with_tables_and_meta_analysis_not_likely_primary()
 
 
 if __name__ == "__main__":

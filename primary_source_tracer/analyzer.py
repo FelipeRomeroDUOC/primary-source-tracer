@@ -59,8 +59,18 @@ SECONDARY_FORMAT_PATTERNS = (
     r"\bmodel united nations\b",
     r"\bquestions to consider\b",
     r"\bliterature review\b",
+    r"\bsystematic review\b",
+    r"\brevisión sistemática\b",
+    r"\bmeta-analysis\b",
+    r"\bmeta-análisis\b",
     r"\boverview\b",
     r"\bresumen ejecutivo\b",
+)
+
+ENCYCLOPEDIA_HOSTS = (
+    "wikipedia.org",
+    "britannica.com",
+    "scholarpedia.org",
 )
 
 PAYWALL_PATTERNS = (
@@ -378,6 +388,7 @@ def analyze_document_text(
     primary_candidate_links = [l for l in links if l.get("is_primary_candidate")]
     is_official_or_pdf = resource_type == "pdf" or domain_cat in ("institutional_gov", "academic_edu")
     parsed_host = (urlparse(url_or_path).netloc or "").lower()
+    is_encyclopedia = any(h in parsed_host for h in ENCYCLOPEDIA_HOSTS)
     is_bibliographic_stub = (
         resource_type == "html"
         and any(h in parsed_host for h in BIBLIOGRAPHIC_STUB_HOSTS)
@@ -401,13 +412,24 @@ def analyze_document_text(
             reasons.append(
                 "Ficha bibliográfica o resumen restringido tras paywall editorial (muestra metadatos/abstract pero no el cuerpo ni tablas completas del documento)." + id_hint
             )
+    elif is_encyclopedia:
+        if len(primary_candidate_links) > 0:
+            classification = "secondary_bridge"
+            reasons.append(
+                f"Enciclopedia o fuente terciaria (ej. Wikipedia); actúa como Fuente Puente porque enlaza a {len(primary_candidate_links)} candidato(s) primario(s)."
+            )
+        else:
+            classification = "secondary_no_outbound_proof"
+            reasons.append(
+                "Enciclopedia o fuente terciaria sin registro primario propio ni enlaces salientes candidatos verificados."
+            )
     elif is_official_or_pdf and (
         len(format_matches) > 0
         or (len(attribution_matches) >= 2 and not effective_table)
     ):
         classification = "official_or_pdf_but_secondary"
         reasons.append(
-            "Aunque proviene de un PDF o dominio oficial, presenta formato de comunicado/resumen secundario y atribución a terceros sin datos o registros primarios propios."
+            "Aunque proviene de un PDF o dominio oficial, presenta formato de comunicado/resumen secundario o síntesis (meta-análisis/revisión) y atribución a terceros sin datos o registros primarios propios."
         )
     elif len(matched_marker_names) > 0 and (effective_table or is_official_or_pdf or resource_type == "dataset") and len(format_matches) == 0:
         classification = "likely_primary"
