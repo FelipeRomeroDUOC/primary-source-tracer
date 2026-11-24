@@ -988,8 +988,11 @@ MCP_TOOLS = [
     {
         "name": "search_web_candidates",
         "description": (
-            "Ejecuta consultas web dinámicas definidas por el agente para descubrir fuentes candidatas. "
-            "100% agnóstico al tema: el agente debe construir las consultas para el dominio solicitado."
+            "Ejecuta consultas web dinámicas definidas por el agente para descubrir fuentes candidatas "
+            "(100% agnóstico al tema). Incluye consultas para el registro fundacional y para réplicas/contrastes posteriores. "
+            "Si el tema involucra declaraciones, hechos observables, gráficos o fuentes históricas/lingüísticas/pre-digitales "
+            "(que suelen existir como facsímiles, imágenes o PDFs escaneados sin OCR), complementa con tu búsqueda web nativa "
+            "para localizar esos videos, imágenes o archivos digitalizados."
         ),
         "inputSchema": {
             "type": "object",
@@ -1074,9 +1077,10 @@ MCP_TOOLS = [
     {
         "name": "generate_evidence_html",
         "description": (
-            "Genera un dossier HTML autocontenido y seguro contra XSS con la evidencia primaria, "
-            "embeds de YouTube arrancando en el segundo exacto (`?start=`), figuras de imágenes verificadas, "
-            "enlaces de respaldo clickables y tabla colapsable de fuentes secundarias."
+            "LLAMA SIEMPRE a esta herramienta al finalizar una auditoría de fuentes primarias (salvo que el usuario pida solo texto plano) "
+            "para generar el dossier HTML autocontenido y seguro contra XSS con veredicto, evidencia primaria, embeds de YouTube "
+            "arrancando en el segundo exacto (`?start=`), figuras de imágenes/facsímiles verificados, enlaces de respaldo clickables "
+            "y tabla colapsable de fuentes secundarias. Presenta el HTML devuelto como Artifact/Canvas interactivo (o guárdalo en local si estás en stdio)."
         ),
         "inputSchema": {
             "type": "object",

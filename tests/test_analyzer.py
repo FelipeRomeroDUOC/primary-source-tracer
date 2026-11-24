@@ -267,6 +267,38 @@ def test_recaptcha_and_ncbi_guide_account_links_filtered():
     assert bot_res["preliminary_classification"] == "unreachable_or_empty"
 
 
+def test_primary_paper_with_overview_and_noisy_repo_links():
+    paper_text = (
+        "Diachronic Word Embeddings Reveal Statistical Laws of Semantic Change. "
+        "Section 2 gives an overview of our diachronic embedding alignment method. "
+        "According to Bréal (1897), semantic shifts follow regularities. "
+        "Table 1 reports corpus statistics across 6 corpora and 200 years of text."
+    )
+    res = analyze_document_text(
+        text=paper_text,
+        url_or_path="https://aclanthology.org/P16-1141.pdf",
+        resource_type="pdf",
+        agent_evidence_markers=["Table 1", "word embeddings", "semantic change"],
+        outbound_links=[],
+        stock_images=[],
+        has_table=True,
+        page_count=10,
+    )
+    assert res["preliminary_classification"] == "likely_primary"
+
+    html = """
+    <html><body>
+      <a href="https://info.arxiv.org/labs/index.html">arXivLabs</a>
+      <a href="https://core.ac.uk/services/recommender">CORE Recommender</a>
+      <a href="https://aclanthology.org/P16-1141.pdf">Full Paper PDF</a>
+    </body></html>
+    """
+    parsed = extract_html_content(html, "https://arxiv.org/abs/1605.09096")
+    candidates = [l["url"] for l in parsed["outbound_links"] if l["is_primary_candidate"]]
+    assert "https://aclanthology.org/P16-1141.pdf" in candidates
+    assert not any("info.arxiv.org" in u or "recommender" in u for u in candidates)
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -303,6 +335,9 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_12_recaptcha_and_nav_links(self):
         test_recaptcha_and_ncbi_guide_account_links_filtered()
+
+    def test_13_primary_paper_with_overview_and_noisy_repo_links(self):
+        test_primary_paper_with_overview_and_noisy_repo_links()
 
 
 if __name__ == "__main__":

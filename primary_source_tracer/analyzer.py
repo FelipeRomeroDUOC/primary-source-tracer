@@ -63,7 +63,7 @@ SECONDARY_FORMAT_PATTERNS = (
     r"\brevisión sistemática\b",
     r"\bmeta-analysis\b",
     r"\bmeta-análisis\b",
-    r"\boverview\b",
+    r"\b(?:general|brief|policy|topic|executive)\s+overview\b",
     r"\bresumen ejecutivo\b",
 )
 
@@ -129,11 +129,21 @@ NOISY_PATH_SEGMENTS = (
     "/register",
     "/cart",
     "/subscribe",
+    "/labs",
+    "/showcase",
+    "/services/recommender",
+)
+
+NOISY_HOSTS = (
+    "info.arxiv.org",
 )
 
 
 def _is_noisy_search_or_nav_url(url: str) -> bool:
     parsed = urlparse(url)
+    host_lower = (parsed.netloc or "").lower()
+    if any(host_lower == h or host_lower.endswith("." + h) for h in NOISY_HOSTS):
+        return True
     path_lower = (parsed.path or "").lower()
     if any(seg in path_lower for seg in NOISY_PATH_SEGMENTS):
         return True
