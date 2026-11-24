@@ -140,7 +140,7 @@ class TestHttpServerAndSSRF(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         tools_json = json.loads(raw)
-        self.assertEqual(len(tools_json["result"]["tools"]), 3)
+        self.assertEqual(len(tools_json["result"]["tools"]), 4)
 
     def test_4_http_tool_call_blocks_ssrf_metadata_url(self):
         auth = {"Authorization": "Bearer secret-test-token"}

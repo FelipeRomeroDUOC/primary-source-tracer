@@ -133,6 +133,80 @@ class TestAudiovisualSupport(unittest.TestCase):
             any(ex.get("timestamp_url") == "https://youtu.be/dQw4w9WgXcQ?t=75" for ex in res["matched_excerpts"])
         )
 
+    def test_6_generate_evidence_html_embeds_youtube_images_and_escapes_xss(self):
+        with tempfile.TemporaryDirectory() as d:
+            out_file = Path(d) / "dossier.html"
+            resp = handle_jsonrpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "generate_evidence_html",
+                        "arguments": {
+                            "topic": "Auditoría <script>alert(1)</script>",
+                            "verdict": "Evidencia verificada en entrevista y gráfico.",
+                            "primary_sources": [
+                                {
+                                    "title": "Entrevista en primera persona",
+                                    "url": "https://youtu.be/dQw4w9WgXcQ?t=95",
+                                    "role": "Evidencia audiovisual primaria",
+                                    "access_status": "Video público",
+                                    "excerpt": "Confirmamos la medición en terreno.",
+                                },
+                                {
+                                    "title": "Gráfico oficial Tabla 1",
+                                    "url": "https://example.org/charts/table1.png",
+                                    "role": "Evidencia gráfica",
+                                    "caption": "Tabla 1 del informe original",
+                                },
+                            ],
+                            "secondary_sources": [
+                                {
+                                    "title": "Nota maliciosa",
+                                    "url": "javascript:alert(1)",
+                                    "classification": "Secundaria",
+                                    "reason": "Sin enlace verificable",
+                                }
+                            ],
+                            "notes": ["Paywall en artículo editorial."],
+                            "output_path": str(out_file),
+                        },
+                    },
+                },
+                remote_safe=False,
+            )
+            payload = json.loads(resp["result"]["content"][0]["text"])
+            html_out = payload["html"]
+            self.assertIn("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=95", html_out)
+            self.assertIn("https://youtu.be/dQw4w9WgXcQ?t=95", html_out)
+            self.assertIn('<img src="https://example.org/charts/table1.png"', html_out)
+            self.assertNotIn("<script>alert(1)</script>", html_out)
+            self.assertNotIn("javascript:alert(1)", html_out)
+            self.assertTrue(out_file.exists())
+
+            # Remote mode must never write files to disk even if output_path is passed
+            remote_out = Path(d) / "should_not_exist.html"
+            remote_resp = handle_jsonrpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 13,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "generate_evidence_html",
+                        "arguments": {
+                            "topic": "Test remoto",
+                            "verdict": "OK",
+                            "output_path": str(remote_out),
+                        },
+                    },
+                },
+                remote_safe=True,
+            )
+            remote_payload = json.loads(remote_resp["result"]["content"][0]["text"])
+            self.assertNotIn("saved_path", remote_payload)
+            self.assertFalse(remote_out.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

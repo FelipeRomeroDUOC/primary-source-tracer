@@ -40,6 +40,7 @@ from primary_source_tracer.audiovisual import (
     fetch_youtube_source,
     prepare_image_mcp_block,
 )
+from primary_source_tracer.dossier import build_evidence_dossier_html
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -945,6 +946,44 @@ def tool_compare_echo_and_trace(
     })
 
 
+def tool_generate_evidence_html(
+    topic: str,
+    verdict: str,
+    primary_sources: list[dict] | None = None,
+    secondary_sources: list[dict] | None = None,
+    notes: list[str] | None = None,
+    output_path: str = "",
+    remote_safe: bool = False,
+) -> dict:
+    html_doc = build_evidence_dossier_html(
+        topic=topic,
+        verdict=verdict,
+        primary_sources=primary_sources,
+        secondary_sources=secondary_sources,
+        notes=notes,
+    )
+    saved_path = ""
+    if output_path and not remote_safe:
+        target = Path(output_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(html_doc, encoding="utf-8")
+        saved_path = str(target.resolve())
+
+    result: dict = {
+        "topic": topic,
+        "html": html_doc,
+        "primary_count": len(primary_sources or []),
+        "secondary_count": len(secondary_sources or []),
+        "note": (
+            "Puedes mostrar este HTML como Artifact/Canvas o abrir el archivo local en el navegador "
+            "para reproducir los embeds de YouTube (con enlace directo de respaldo si el sandbox bloquea iframes)."
+        ),
+    }
+    if saved_path:
+        result["saved_path"] = saved_path
+    return result
+
+
 MCP_TOOLS = [
     {
         "name": "search_web_candidates",
@@ -1030,6 +1069,62 @@ MCP_TOOLS = [
                 },
             },
             "required": ["urls"],
+        },
+    },
+    {
+        "name": "generate_evidence_html",
+        "description": (
+            "Genera un dossier HTML autocontenido y seguro contra XSS con la evidencia primaria, "
+            "embeds de YouTube arrancando en el segundo exacto (`?start=`), figuras de imágenes verificadas, "
+            "enlaces de respaldo clickables y tabla colapsable de fuentes secundarias."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Título del tema o afirmación auditada."},
+                "verdict": {"type": "string", "description": "Veredicto breve basado únicamente en lo verificado."},
+                "primary_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                            "role": {"type": "string"},
+                            "access_status": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "excerpt": {"type": "string"},
+                            "media_type": {"type": "string"},
+                            "start_seconds": {"type": "integer"},
+                            "caption": {"type": "string"},
+                        },
+                    },
+                    "description": "Fuentes primarias, réplicas o pruebas audiovisuales (YouTube/imágenes) verificadas.",
+                },
+                "secondary_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                            "classification": {"type": "string"},
+                            "reason": {"type": "string"},
+                        },
+                    },
+                    "description": "Fuentes secundarias evaluadas con clasificación y razón explícita.",
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Limitaciones, fricciones técnicas o elementos no verificados.",
+                },
+                "output_path": {
+                    "type": "string",
+                    "description": "Ruta local opcional donde guardar el .html (solo aplica en modo local stdio).",
+                },
+            },
+            "required": ["topic", "verdict"],
         },
     },
 ]
@@ -1157,6 +1252,16 @@ def handle_jsonrpc_request(request: dict, remote_safe: bool = False) -> dict | N
                         agent_evidence_markers=args.get("agent_evidence_markers") or [],
                         follow_bridge_links=args.get("follow_bridge_links", True),
                         max_bridge_hops=args.get("max_bridge_hops", 4),
+                        remote_safe=remote_safe,
+                    )
+                elif name == "generate_evidence_html":
+                    data = tool_generate_evidence_html(
+                        topic=args.get("topic", ""),
+                        verdict=args.get("verdict", ""),
+                        primary_sources=args.get("primary_sources") or [],
+                        secondary_sources=args.get("secondary_sources") or [],
+                        notes=args.get("notes") or [],
+                        output_path=args.get("output_path", ""),
                         remote_safe=remote_safe,
                     )
                 else:

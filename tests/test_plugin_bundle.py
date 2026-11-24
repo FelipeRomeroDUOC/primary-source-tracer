@@ -68,7 +68,7 @@ def test_mcp_server_stdio_subprocess_roundtrip():
         timeout=5,
     )
     resp = json.loads(out.strip().splitlines()[0])
-    assert len(resp["result"]["tools"]) == 3
+    assert len(resp["result"]["tools"]) == 4
 
 
 class TestPluginBundle(unittest.TestCase):

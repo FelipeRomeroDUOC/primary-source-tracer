@@ -168,9 +168,10 @@ Usa la URL resultante terminada en `/mcp` (ej. `https://tu-subdominio.trycloudfl
 
 ## Herramientas MCP incluidas
 
-1. `search_web_candidates(queries, max_results_per_query)` — Ejecuta consultas dinámicas definidas por el agente (100 % agnóstico al tema).
-2. `inspect_and_classify_source(url_or_path, agent_evidence_markers, max_excerpts)` — Inspecciona HTML o PDF (remoto o local), detecta falsos primarios (`official_or_pdf_but_secondary`), detecta *paywalls* (`paywalled_abstract_only`) resolviendo DOIs vía OpenAlex, renderiza PDFs escaneados a PNG y extrae enlaces puente.
-3. `compare_echo_and_trace(urls, agent_evidence_markers, follow_bridge_links, max_bridge_hops)` — Detecta clústeres de eco mediante similitud TF-IDF en Python puro, sigue enlaces puente automáticamente (1 salto) y conserva todas las fuentes secundarias con sus razones.
+1. `search_web_candidates(queries, max_results_per_query)` — Ejecuta consultas dinámicas definidas por el agente (100 % agnóstico al tema), con respaldo automático en OpenAlex y Wikipedia ante bloqueos anti-bot.
+2. `inspect_and_classify_source(url_or_path, agent_evidence_markers, max_excerpts)` — Inspecciona HTML, PDF, imágenes directas (`.png`/`.jpg`/`.webp`) y videos de YouTube (metadatos, enlaces de descripción y transcripción con timestamps clickables), detecta falsos primarios (`official_or_pdf_but_secondary`), detecta *paywalls* resolviendo DOIs vía OpenAlex y renderiza PDFs escaneados.
+3. `compare_echo_and_trace(urls, agent_evidence_markers, follow_bridge_links, max_bridge_hops)` — Detecta clústeres de eco mediante similitud TF-IDF en Python puro, sigue enlaces puente relevantes automáticamente (1 salto) y conserva todas las fuentes secundarias con sus razones.
+4. `generate_evidence_html(topic, verdict, primary_sources, secondary_sources, notes, output_path)` — Genera un dossier HTML autocontenido y seguro contra XSS con embeds de YouTube al segundo exacto (`?start=`), figuras de imágenes verificadas, enlaces de respaldo y tabla colapsable de fuentes secundarias.
 
 ---
 

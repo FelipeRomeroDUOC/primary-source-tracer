@@ -42,7 +42,7 @@ class TestPortablePackage(unittest.TestCase):
             timeout=5,
         )
         resp = json.loads(out.strip().splitlines()[0])
-        self.assertEqual(len(resp["result"]["tools"]), 3)
+        self.assertEqual(len(resp["result"]["tools"]), 4)
 
     def test_3_console_script_entrypoint_if_installed(self):
         exe = shutil.which("primary-source-tracer-mcp")
@@ -65,7 +65,7 @@ class TestPortablePackage(unittest.TestCase):
             timeout=5,
         )
         resp = json.loads(out.strip().splitlines()[0])
-        self.assertEqual(len(resp["result"]["tools"]), 3)
+        self.assertEqual(len(resp["result"]["tools"]), 4)
 
 
 if __name__ == "__main__":

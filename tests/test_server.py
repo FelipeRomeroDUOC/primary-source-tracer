@@ -30,6 +30,7 @@ def test_mcp_initialize_and_tools_list():
         "search_web_candidates",
         "inspect_and_classify_source",
         "compare_echo_and_trace",
+        "generate_evidence_html",
     }
 
 
