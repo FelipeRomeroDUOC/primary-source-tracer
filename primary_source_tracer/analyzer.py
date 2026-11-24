@@ -463,7 +463,16 @@ def analyze_document_text(
         reasons.append(
             "Aunque proviene de un PDF o dominio oficial, presenta formato de comunicado/resumen secundario o síntesis (meta-análisis/revisión) y atribución a terceros sin datos o registros primarios propios."
         )
-    elif len(matched_marker_names) > 0 and (effective_table or is_official_or_pdf or resource_type == "dataset") and len(format_matches) == 0:
+    elif (
+        len(matched_marker_names) > 0
+        and (effective_table or is_official_or_pdf or resource_type == "dataset")
+        and len(format_matches) == 0
+        and not (
+            resource_type == "html"
+            and not is_official_or_pdf
+            and (len(attribution_matches) >= 1 or domain_cat == "media_or_blog")
+        )
+    ):
         classification = "likely_primary"
         reasons.append(
             "Contiene marcadores probatorios directos del tema junto con estructura de registro/tabla o documento fuente sin formato de comunicado secundario."

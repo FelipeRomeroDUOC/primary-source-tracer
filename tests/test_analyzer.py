@@ -221,6 +221,26 @@ def test_bot_challenge_page_classified_unreachable():
     assert any("anti-bot" in r.lower() or "javascript" in r.lower() for r in res["classification_reasons"])
 
 
+def test_html_news_with_layout_table_and_attribution_not_likely_primary():
+    res = analyze_document_text(
+        text="Según un estudio citado por Rauscher, escuchar música de Mozart tuvo un efecto breve en la prueba.",
+        url_or_path="https://www.nmas.com.mx/ciencia/efecto-mozart-estudio/",
+        resource_type="html",
+        agent_evidence_markers=["Rauscher", "Mozart"],
+        outbound_links=[
+            {
+                "url": "https://www.nature.com/articles/365611a0",
+                "anchor_text": "Nature 1993",
+                "domain_category": "other",
+                "is_primary_candidate": False,
+            }
+        ],
+        stock_images=[],
+        has_table=True,
+    )
+    assert res["preliminary_classification"] == "secondary_no_outbound_proof"
+
+
 class TestAnalyzer(unittest.TestCase):
     def test_1(self):
         test_official_gov_press_release_classified_as_secondary()
@@ -251,6 +271,9 @@ class TestAnalyzer(unittest.TestCase):
 
     def test_10_bot_challenge_classification(self):
         test_bot_challenge_page_classified_unreachable()
+
+    def test_11_news_table_attribution(self):
+        test_html_news_with_layout_table_and_attribution_not_likely_primary()
 
 
 if __name__ == "__main__":
